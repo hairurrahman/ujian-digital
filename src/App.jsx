@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu6u6rurDMqo8AYJeu4EkpXC79AVsZcoRT1yCgQF9lI9oTVY7bdKFTNlJAnIMBXrHrww/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwGCqXtjCUeIT7sWIX5vjqefN_5S_aLt9syH8v82xuC4gTtzm7BRT8BJYFJTx_Pcufw7Q/exec";
 const MAPEL_LIST = [
   "Bahasa Indonesia","Pendidikan Pancasila","IPAS","Matematika",
   "Seni Rupa","Bahasa Madura","Pendidikan Agama Islam","PJOK"
@@ -257,40 +257,77 @@ function isDriveUrl(url) {
   return url && (url.includes("drive.google.com") || url.includes("docs.google.com"));
 }
 
-// ── GambarSoal: Drive → iframe, URL biasa → img ──
+// ── GambarSoal: Drive → iframe, URL biasa → img
+// Tidak ada bingkai/border — tampil apa adanya ──
 function GambarSoal({ url, alt = "Gambar soal" }) {
   if (!url || !url.trim()) return null;
   if (isDriveUrl(url)) {
     const fileId = extractDriveFileId(url);
     if (!fileId) return (
-      <div className="w-full rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600 text-center">
-        ⚠️ Format link Google Drive tidak dikenali.
-      </div>
+      <p className="text-xs text-red-500 text-center py-2">⚠️ Format link Google Drive tidak dikenali.</p>
     );
     return (
-      <div className="relative w-full rounded-xl border border-slate-200 bg-slate-50 overflow-hidden" style={{ height:"220px" }}>
-        <iframe src={`https://drive.google.com/file/d/${fileId}/preview`} title={alt} allow="autoplay"
-          className="absolute inset-0 w-full h-full border-0" style={{ pointerEvents:"none" }} />
+      <div className="relative w-full overflow-hidden" style={{ height:"220px" }}>
+        <iframe
+          src={`https://drive.google.com/file/d/${fileId}/preview`}
+          title={alt}
+          allow="autoplay"
+          className="absolute inset-0 w-full h-full border-0"
+          style={{ pointerEvents:"none" }}
+        />
       </div>
     );
   }
+  // URL gambar biasa — tampil tanpa bingkai apapun
   return (
-    <img src={url} alt={alt} className="w-full max-h-52 object-contain rounded-xl border border-slate-200"
-      onError={(e) => { e.target.outerHTML = `<div class="w-full rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600 text-center">⚠️ Gambar tidak dapat dimuat.</div>`; }} />
+    <img
+      src={url}
+      alt={alt}
+      className="w-full max-h-60 object-contain"
+      onError={e => {
+        e.target.style.display = "none";
+        const msg = document.createElement("p");
+        msg.className = "text-xs text-red-500 text-center py-2";
+        msg.textContent = "⚠️ Gambar tidak dapat dimuat.";
+        e.target.parentNode.appendChild(msg);
+      }}
+    />
   );
 }
 
-// ── LogoSekolah: thumbnail Drive (CORS-ok) ──
+// ── LogoSekolah: tampilkan logo dari URL manapun ──
+// Fallback berantai: thumbnail → uc?export=view → emoji
 function LogoSekolah({ url, className = "" }) {
-  const [err, setErr] = useState(false);
-  if (!url || !url.trim() || err) return <span className="text-2xl">🏫</span>;
+  const [errCount, setErrCount] = useState(0);
+  useEffect(() => { setErrCount(0); }, [url]);
+
+  if (!url || !url.trim() || errCount >= 3) {
+    return <span className="text-4xl select-none">🏫</span>;
+  }
+
   let src = url.trim();
   if (isDriveUrl(url)) {
     const fileId = extractDriveFileId(url);
-    if (!fileId) return <span className="text-2xl">🏫</span>;
-    src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200-h200`;
+    if (!fileId) return <span className="text-4xl select-none">🏫</span>;
+    if (errCount === 0) {
+      src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200-h200`;
+    } else if (errCount === 1) {
+      src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+    } else {
+      // Terakhir: coba lekukan lain — embed thumbnail tanpa crossOrigin
+      src = `https://lh3.googleusercontent.com/d/${fileId}=w200-h200`;
+    }
   }
-  return <img src={src} alt="Logo sekolah" className={className} onError={() => setErr(true)} referrerPolicy="no-referrer" />;
+
+  return (
+    <img
+      src={src}
+      alt="Logo sekolah"
+      className={className}
+      referrerPolicy="no-referrer"
+      onError={() => setErrCount(c => c + 1)}
+    />
+  );
 }
 
 // ── Generate PDF langsung download menggunakan jsPDF (CDN) ──
@@ -776,13 +813,40 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
     } catch { addToast(`Demo: Token "${tokenValue}" (belum terhubung ke server)`, "warning"); }
   };
 
-  const handleSavePengaturan = () => {
+  const handleSavePengaturan = async () => {
     const durasi = Number(durasiInput);
     if (!durasi || durasi < 1 || durasi > 300) return addToast("Durasi harus antara 1–300 menit!", "error");
-    onSaveSettings({ logoUrl:logoInput, namaSekolah:namaInput, namaGuru:namaGuruInput, nipGuru:nipGuruInput, kotaTTD:kotaTTDInput, durasiMenit:durasi, spreadsheetUrl });
+
+    const newSettings = {
+      logoUrl: logoInput, namaSekolah: namaInput, namaGuru: namaGuruInput,
+      nipGuru: nipGuruInput, kotaTTD: kotaTTDInput, durasiMenit: durasi, spreadsheetUrl,
+    };
+
+    // Simpan ke localStorage dulu (instant, offline-capable)
+    onSaveSettings(newSettings);
     onSaveScriptUrl(urlInput);
     setSavedSpreadsheetUrl(spreadsheetUrl);
-    addToast("Pengaturan disimpan! ✅", "success");
+
+    // Push ke Spreadsheet jika Apps Script URL sudah diisi
+    const url = urlInput || scriptUrl;
+    if (url) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          body: JSON.stringify({ action: "simpanPengaturan", ...newSettings }),
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          addToast("✅ Pengaturan disimpan ke Spreadsheet — sinkron di semua perangkat!", "success");
+        } else {
+          addToast("Tersimpan lokal. Gagal sinkron ke Spreadsheet: " + (data.message || ""), "warning");
+        }
+      } catch {
+        addToast("Tersimpan lokal. Tidak bisa terhubung ke Apps Script.", "warning");
+      }
+    } else {
+      addToast("Pengaturan disimpan lokal. Isi URL Apps Script untuk sinkron antar perangkat.", "info");
+    }
   };
 
   const jam = Math.floor(durasiInput / 60);
@@ -883,7 +947,7 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
                 )}
               </div>
               {showPreview && gambar && (
-                <div className="mt-2 border border-slate-200 rounded-xl overflow-hidden">
+                <div className="mt-2 overflow-hidden rounded-xl">
                   <GambarSoal url={gambar} alt="Preview soal" />
                 </div>
               )}
@@ -1124,6 +1188,14 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
                 </a>
               </div>
             )}
+
+            {/* Info: settings tersimpan di Spreadsheet, otomatis sinkron antar perangkat */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="text-xs font-bold text-blue-800 mb-1">🔄 Sinkron Otomatis Antar Perangkat</p>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                Pengaturan (logo, nama sekolah, nama guru, NIP, kota) disimpan langsung ke sheet <strong>PENGATURAN</strong> di Google Spreadsheet kamu. Saat aplikasi dibuka di HP atau browser lain, pengaturan akan otomatis dimuat dari Spreadsheet — selama URL Apps Script sudah diisi.
+              </p>
+            </div>
           </div>
         )}
 
@@ -1627,13 +1699,77 @@ export default function App() {
   const { toasts, addToast } = useToast();
   const [mode, setMode] = useState("siswa");
   const [siswa, setSiswa] = useState(null);
+
+  // Settings: baca dari localStorage sebagai nilai awal (cache)
   const [settings, setSettings] = useState(() => {
     try { return JSON.parse(localStorage.getItem("appSettings") || "{}"); } catch { return {}; }
   });
-  const [scriptUrl, setScriptUrl] = useState(() => localStorage.getItem("scriptUrl") || "");
+  const [scriptUrl, setScriptUrl] = useState(() => {
+    try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; }
+  });
 
-  const saveSettings = s => { setSettings(s); localStorage.setItem("appSettings", JSON.stringify(s)); };
-  const saveScriptUrl = u => { setScriptUrl(u); localStorage.setItem("scriptUrl", u); };
+  // Fetch settings dari Spreadsheet saat pertama buka (biar sinkron antar perangkat)
+  useEffect(() => {
+    const url = (() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } })();
+    if (!url) return; // belum ada URL Apps Script, skip
+
+    fetch(`${url}?action=getPengaturan`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "success" && data.data && Object.keys(data.data).length > 0) {
+          const remote = data.data;
+          // Merge: remote settings lebih prioritas dari localStorage
+          const merged = {
+            logoUrl       : remote.logoUrl        || "",
+            namaSekolah   : remote.namaSekolah    || "",
+            namaGuru      : remote.namaGuru       || "",
+            nipGuru       : remote.nipGuru        || "",
+            kotaTTD       : remote.kotaTTD        || "",
+            durasiMenit   : remote.durasiMenit ? Number(remote.durasiMenit) : 60,
+            spreadsheetUrl: remote.spreadsheetUrl || "",
+          };
+          setSettings(merged);
+          // Update cache localStorage
+          try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
+        }
+      })
+      .catch(() => {
+        // Gagal fetch (offline/error) → tetap pakai localStorage, tidak perlu pesan error
+      });
+  }, []); // hanya sekali saat mount
+
+  const saveSettings = s => {
+    setSettings(s);
+    try { localStorage.setItem("appSettings", JSON.stringify(s)); } catch {}
+  };
+  const saveScriptUrl = u => {
+    setScriptUrl(u);
+    try { localStorage.setItem("scriptUrl", u); } catch {}
+  };
+
+  // Fullscreen saat ujian dimulai
+  const handleMulaiUjian = async (data) => {
+    setSiswa(data);
+    setMode("ujian");
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      else if (el.mozRequestFullScreen) await el.mozRequestFullScreen();
+    } catch { /* fullscreen ditolak browser → lanjutkan ujian biasa */ }
+  };
+
+  // Keluar fullscreen saat ujian selesai
+  const handleSelesaiUjian = async () => {
+    setSiswa(null);
+    setMode("siswa");
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+      }
+    } catch {}
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -1644,7 +1780,7 @@ export default function App() {
       <main className="pb-10">
         {mode === "siswa" && (
           <HalamanSiswa
-            onMulaiUjian={data => { setSiswa(data); setMode("ujian"); }}
+            onMulaiUjian={handleMulaiUjian}
             onGuruMode={() => setMode("guruLogin")}
           />
         )}
@@ -1653,7 +1789,7 @@ export default function App() {
             siswa={siswa}
             scriptUrl={scriptUrl}
             addToast={addToast}
-            onSelesai={() => { setSiswa(null); setMode("siswa"); }}
+            onSelesai={handleSelesaiUjian}
             durasiMenit={settings.durasiMenit || 60}
             namaGuru={settings.namaGuru || ""}
             nipGuru={settings.nipGuru || ""}

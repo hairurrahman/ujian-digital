@@ -827,9 +827,9 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
     onSaveScriptUrl(urlInput);
     setSavedSpreadsheetUrl(spreadsheetUrl);
 
-    // Push ke Spreadsheet jika Apps Script URL sudah diisi
-    const url = urlInput || scriptUrl;
-    if (url) {
+    // Push ke Spreadsheet — pakai URL input, atau localStorage, atau konstanta hardcode
+    const url = urlInput || scriptUrl || APPS_SCRIPT_URL;
+    if (url && !url.includes("YOUR_APPS_SCRIPT_ID")) {
       try {
         const res = await fetch(url, {
           method: "POST",
@@ -1190,11 +1190,23 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
             )}
 
             {/* Info: settings tersimpan di Spreadsheet, otomatis sinkron antar perangkat */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-xs font-bold text-blue-800 mb-1">🔄 Sinkron Otomatis Antar Perangkat</p>
-              <p className="text-xs text-blue-700 leading-relaxed">
-                Pengaturan (logo, nama sekolah, nama guru, NIP, kota) disimpan langsung ke sheet <strong>PENGATURAN</strong> di Google Spreadsheet kamu. Saat aplikasi dibuka di HP atau browser lain, pengaturan akan otomatis dimuat dari Spreadsheet — selama URL Apps Script sudah diisi.
-              </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+              <p className="text-xs font-bold text-blue-800">🔄 Cara Kerja Sinkron Otomatis</p>
+              <ol className="text-xs text-blue-700 leading-relaxed list-decimal list-inside space-y-1">
+                <li>Isi URL Apps Script di atas → klik <strong>Simpan Pengaturan</strong></li>
+                <li>Pengaturan tersimpan ke sheet <strong>PENGATURAN</strong> di Spreadsheet</li>
+                <li>Buka aplikasi di HP/browser lain → logo & nama sekolah otomatis muncul</li>
+              </ol>
+              <div className="bg-blue-100 rounded-lg px-3 py-2 mt-1">
+                <p className="text-xs font-bold text-blue-900 mb-1">⚡ Agar sinkron tanpa perlu isi URL dulu:</p>
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Di file <code className="bg-white px-1 rounded">src/App.jsx</code> baris pertama, ganti:
+                </p>
+                <code className="block text-xs bg-white rounded px-2 py-1 mt-1 text-slate-700 break-all">
+                  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/<strong>ISI_ID_KAMU</strong>/exec";
+                </code>
+                <p className="text-xs text-blue-700 mt-1">Lalu <code className="bg-white px-1 rounded">npm run deploy</code> ulang. Setelah itu semua perangkat langsung sinkron tanpa perlu isi apapun.</p>
+              </div>
             </div>
           </div>
         )}
@@ -1708,35 +1720,43 @@ export default function App() {
     try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; }
   });
 
-  // Fetch settings dari Spreadsheet saat pertama buka (biar sinkron antar perangkat)
+  // ── Fetch settings dari Spreadsheet saat pertama buka ──
+  // Prioritas URL: localStorage (jika sudah diisi guru) → APPS_SCRIPT_URL (hardcode)
+  // Di perangkat baru yang belum pernah buka app ini, APPS_SCRIPT_URL langsung dipakai
   useEffect(() => {
-    const url = (() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } })();
-    if (!url) return; // belum ada URL Apps Script, skip
+    const url = (() => {
+      try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; }
+    })() || APPS_SCRIPT_URL;
+
+    // Skip jika masih placeholder belum diganti
+    if (!url || url.includes("YOUR_APPS_SCRIPT_ID")) return;
 
     fetch(`${url}?action=getPengaturan`)
       .then(r => r.json())
       .then(data => {
         if (data.status === "success" && data.data && Object.keys(data.data).length > 0) {
           const remote = data.data;
-          // Merge: remote settings lebih prioritas dari localStorage
           const merged = {
-            logoUrl       : remote.logoUrl        || "",
-            namaSekolah   : remote.namaSekolah    || "",
-            namaGuru      : remote.namaGuru       || "",
-            nipGuru       : remote.nipGuru        || "",
-            kotaTTD       : remote.kotaTTD        || "",
+            logoUrl       : remote.logoUrl         || "",
+            namaSekolah   : remote.namaSekolah     || "",
+            namaGuru      : remote.namaGuru        || "",
+            nipGuru       : remote.nipGuru         || "",
+            kotaTTD       : remote.kotaTTD         || "",
             durasiMenit   : remote.durasiMenit ? Number(remote.durasiMenit) : 60,
-            spreadsheetUrl: remote.spreadsheetUrl || "",
+            spreadsheetUrl: remote.spreadsheetUrl  || "",
           };
           setSettings(merged);
-          // Update cache localStorage
+          // Simpan ke localStorage sebagai cache
           try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
+          // Simpan juga scriptUrl ke localStorage agar offline tetap tersedia
+          try { localStorage.setItem("scriptUrl", url); } catch {}
+          setScriptUrl(url);
         }
       })
       .catch(() => {
-        // Gagal fetch (offline/error) → tetap pakai localStorage, tidak perlu pesan error
+        // Offline atau error jaringan → tetap pakai cache localStorage, tidak masalah
       });
-  }, []); // hanya sekali saat mount
+  }, []); // sekali saat mount
 
   const saveSettings = s => {
     setSettings(s);

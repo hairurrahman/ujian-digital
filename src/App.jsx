@@ -1,28 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwGCqXtjCUeIT7sWIX5vjqefN_5S_aLt9syH8v82xuC4gTtzm7BRT8BJYFJTx_Pcufw7Q/exec";
-const MAPEL_LIST = [
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwer1KXCdelksKdIGhvdgTBIM0-3-092_aLQ9ivMpWGniQZBTUkqT8nYFgilLbQXHtF/exec";
+const DEFAULT_MAPEL = [
   "Bahasa Indonesia","Pendidikan Pancasila","IPAS","Matematika",
   "Seni Rupa","Bahasa Madura","Pendidikan Agama Islam","PJOK"
 ];
-const ASESMEN_LIST = [
+const DEFAULT_ASESMEN = [
   "Sumatif 1","Sumatif 2","Sumatif 3","Sumatif 4",
   "Sumatif 5","Sumatif 6","Sumatif 7","Sumatif 8",
   "Asesmen Akhir Semester"
 ];
-const JENIS_SOAL = ["Pilihan Ganda","Pilihan Ganda Kompleks","Benar/Salah Kompleks"];
+const JENIS_SOAL_LENGKAP = ["Pilihan Ganda","Pilihan Ganda Kompleks","Benar/Salah Kompleks","Uraian/Esai"];
 const GURU_PASSWORD = "guru123";
 const DEMO_TOKEN = "UJIAN2024";
 
 // ============================================================
 // KATEX — Render formula matematika
-// Format: $...$ untuk inline, $$...$$ untuk block/display
-// Contoh: $\frac{1}{2}$, $\sqrt{16}$, $2^3$, $\pi$
 // ============================================================
 let katexLoaded = false;
 async function loadKatex() {
-  if (katexLoaded || window.katex) { katexLoaded = true; return; }
-  // Load CSS
+  if (katexLoaded || window.katex) return;
   if (!document.getElementById("katex-css")) {
     const link = document.createElement("link");
     link.id = "katex-css";
@@ -30,7 +27,6 @@ async function loadKatex() {
     link.href = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css";
     document.head.appendChild(link);
   }
-  // Load JS
   await new Promise((res, rej) => {
     const s = document.createElement("script");
     s.src = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js";
@@ -40,144 +36,84 @@ async function loadKatex() {
   katexLoaded = true;
 }
 
-// Render teks dengan formula KaTeX inline ($...$) dan block ($$...$$)
-// Teks biasa tetap dirender normal
 function MathText({ text, className = "" }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(!!window.katex);
-
   useEffect(() => {
-    if (!window.katex) {
-      loadKatex().then(() => setReady(true)).catch(() => setReady(false));
-    }
+    if (!window.katex) loadKatex().then(() => setReady(true));
   }, []);
-
   useEffect(() => {
     if (!ready || !ref.current || !text) return;
     const el = ref.current;
-    // Ganti $$...$$ (block) dulu, lalu $...$ (inline)
-    // Proses sebagai HTML string
     try {
-      // Split berdasarkan $$ (block) dan $ (inline)
       const segments = [];
       let remaining = String(text);
       const pattern = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
-      let lastIndex = 0;
-      let match;
+      let lastIndex = 0, match;
       while ((match = pattern.exec(remaining)) !== null) {
-        if (match.index > lastIndex) {
-          segments.push({ type: "text", content: remaining.slice(lastIndex, match.index) });
-        }
+        if (match.index > lastIndex) segments.push({ type: "text", content: remaining.slice(lastIndex, match.index) });
         const raw = match[0];
         const isBlock = raw.startsWith("$$");
         const formula = isBlock ? raw.slice(2, -2).trim() : raw.slice(1, -1).trim();
         segments.push({ type: isBlock ? "block" : "inline", content: formula });
         lastIndex = match.index + raw.length;
       }
-      if (lastIndex < remaining.length) {
-        segments.push({ type: "text", content: remaining.slice(lastIndex) });
-      }
-
-      // Render ke HTML
+      if (lastIndex < remaining.length) segments.push({ type: "text", content: remaining.slice(lastIndex) });
       let html = "";
       segments.forEach(seg => {
-        if (seg.type === "text") {
-          html += seg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-        } else {
-          try {
-            html += window.katex.renderToString(seg.content, {
-              displayMode: seg.type === "block",
-              throwOnError: false,
-              output: "html",
-            });
-          } catch {
-            html += `<span style="color:#dc2626;font-size:0.8em">[formula error]</span>`;
-          }
-        }
+        if (seg.type === "text") html += seg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+        else try {
+          html += window.katex.renderToString(seg.content, { displayMode: seg.type === "block", throwOnError: false });
+        } catch { html += `<span style="color:#dc2626">[formula error]</span>`; }
       });
       el.innerHTML = html;
-    } catch {
-      el.textContent = text;
-    }
+    } catch { el.textContent = text; }
   }, [text, ready]);
-
   if (!text) return null;
-  // Jika KaTeX belum siap atau tidak ada formula, render teks biasa
-  if (!ready || !String(text).includes("$")) {
-    return <span className={className}>{text}</span>;
-  }
+  if (!ready || !String(text).includes("$")) return <span className={className}>{text}</span>;
   return <span ref={ref} className={className} />;
 }
 
-// Cek apakah mapel adalah Matematika (untuk mengaktifkan toolbar math)
 const isMapelMath = (mapel) => mapel === "Matematika";
 
-// ── MathInput: textarea dengan toolbar simbol matematika ──
-// Aktif saat mapel = Matematika. Klik simbol → sisipkan ke kursor teks
 const MATH_TOOLBAR = [
-  { label:"½", insert:"\\frac{}{}", title:"Pecahan" },
-  { label:"√", insert:"\\sqrt{}", title:"Akar" },
-  { label:"x²", insert:"^{2}", title:"Pangkat 2" },
-  { label:"xⁿ", insert:"^{}", title:"Pangkat n" },
-  { label:"×", insert:"\\times ", title:"Kali" },
-  { label:"÷", insert:"\\div ", title:"Bagi" },
-  { label:"±", insert:"\\pm ", title:"Plus minus" },
-  { label:"≤", insert:"\\leq ", title:"Kurang sama dengan" },
-  { label:"≥", insert:"\\geq ", title:"Lebih sama dengan" },
-  { label:"≠", insert:"\\neq ", title:"Tidak sama" },
-  { label:"π", insert:"\\pi ", title:"Pi" },
-  { label:"°", insert:"^{\\circ}", title:"Derajat" },
-  { label:"∑", insert:"\\sum_{i=1}^{n}", title:"Sigma/Jumlah" },
-  { label:"|x|", insert:"\\left|{}\\right|", title:"Nilai mutlak" },
+  { label:"½", insert:"\\frac{}{}", title:"Pecahan" }, { label:"√", insert:"\\sqrt{}", title:"Akar" },
+  { label:"x²", insert:"^{2}", title:"Pangkat 2" }, { label:"xⁿ", insert:"^{}", title:"Pangkat n" },
+  { label:"×", insert:"\\times ", title:"Kali" }, { label:"÷", insert:"\\div ", title:"Bagi" },
+  { label:"±", insert:"\\pm ", title:"Plus minus" }, { label:"≤", insert:"\\leq ", title:"Kurang sama dengan" },
+  { label:"≥", insert:"\\geq ", title:"Lebih sama dengan" }, { label:"≠", insert:"\\neq ", title:"Tidak sama" },
+  { label:"π", insert:"\\pi ", title:"Pi" }, { label:"°", insert:"^{\\circ}", title:"Derajat" },
+  { label:"∑", insert:"\\sum_{i=1}^{n}", title:"Sigma" }, { label:"|x|", insert:"\\left|{}\\right|", title:"Nilai mutlak" },
   { label:"( )", insert:"\\left({}\\right)", title:"Kurung" },
 ];
 
-function MathInput({ value, onChange, onPaste, rows = 3, placeholder = "Tulis teks atau formula $...$ di sini...", showToolbar = false, id }) {
-  const textareaRef = useRef(null);
-  const inputRef = useRef(null);
+function MathInput({ value, onChange, onPaste, rows = 3, placeholder, showToolbar = false, id }) {
+  const textareaRef = useRef(null), inputRef = useRef(null);
   const isMultiline = rows > 1;
-
   const insertAtCursor = (toInsert) => {
     const el = isMultiline ? textareaRef.current : inputRef.current;
     if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    // Bungkus dengan $ jika belum ada formula di sekitar kursor
-    // Sisipkan sebagai $formula$ jika posisi bukan di dalam $
-    const before = value.slice(0, start);
-    const after = value.slice(end);
-    // Hitung jumlah $ sebelum kursor: jika ganjil, sudah di dalam formula
+    const start = el.selectionStart, end = el.selectionEnd;
+    const before = value.slice(0, start), after = value.slice(end);
     const dollarsBefore = (before.match(/\$/g) || []).length;
     let newText;
-    if (dollarsBefore % 2 === 1) {
-      // Sudah dalam formula — sisipkan langsung
-      newText = before + toInsert + after;
-    } else {
-      // Belum dalam formula — bungkus dengan $...$
-      newText = before + "$" + toInsert + "$" + after;
-    }
+    if (dollarsBefore % 2 === 1) newText = before + toInsert + after;
+    else newText = before + "$" + toInsert + "$" + after;
     onChange({ target: { value: newText } });
-    // Kembalikan fokus dan posisi kursor
     setTimeout(() => {
       el.focus();
       const pos = before.length + (dollarsBefore % 2 === 1 ? toInsert.length : toInsert.length + 2);
       el.setSelectionRange(pos, pos);
     }, 0);
   };
-
   return (
     <div>
       {showToolbar && (
         <div className="bg-blue-50 border border-blue-200 rounded-t-xl px-2 py-1.5 flex flex-wrap gap-1 border-b-0">
           <span className="text-xs text-blue-500 font-semibold self-center mr-1">∑ Math:</span>
           {MATH_TOOLBAR.map(btn => (
-            <button
-              key={btn.label}
-              type="button"
-              title={btn.title}
-              onClick={() => insertAtCursor(btn.insert)}
-              className="text-xs bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-2 py-1 rounded-lg transition-colors"
-            >
+            <button key={btn.label} type="button" title={btn.title} onClick={() => insertAtCursor(btn.insert)}
+              className="text-xs bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-2 py-1 rounded-lg">
               {btn.label}
             </button>
           ))}
@@ -185,63 +121,37 @@ function MathInput({ value, onChange, onPaste, rows = 3, placeholder = "Tulis te
         </div>
       )}
       {isMultiline ? (
-        <textarea
-          ref={textareaRef}
-          id={id}
-          value={value}
-          onChange={onChange}
-          onPaste={onPaste}
-          rows={rows}
-          placeholder={placeholder}
-          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`}
-        />
+        <textarea ref={textareaRef} id={id} value={value} onChange={onChange} onPaste={onPaste} rows={rows} placeholder={placeholder}
+          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`} />
       ) : (
-        <input
-          ref={inputRef}
-          id={id}
-          type="text"
-          value={value}
-          onChange={onChange}
-          onPaste={onPaste}
-          placeholder={placeholder}
-          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`}
-        />
+        <input ref={inputRef} id={id} type="text" value={value} onChange={onChange} onPaste={onPaste} placeholder={placeholder}
+          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`} />
       )}
-      {/* Preview formula real-time jika ada $ */}
       {showToolbar && value && value.includes("$") && (
-        <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 leading-relaxed">
-          <span className="text-xs text-slate-400 mr-2">Preview:</span>
-          <MathText text={value} />
+        <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+          <span className="text-xs text-slate-400 mr-2">Preview:</span><MathText text={value} />
         </div>
       )}
     </div>
   );
 }
 
-// ── Default opsi berdasarkan jenis soal ──
 const defaultOpsi = (jenis) => {
   if (jenis === "Benar/Salah Kompleks") return ["", "", ""];
-  return ["", "", "", ""]; // PG & PGK default 4
+  return ["", "", "", ""];
 };
 
-// ── Demo soal ──
 const DEMO_SOAL = {
   "Matematika_Sumatif 1": [
-    { id:"1", soal:"Berapakah hasil dari 12 × 15?", gambar:"", jenisSoal:"Pilihan Ganda",
-      opsi:JSON.stringify(["150","170","180","160"]), jawabanBenar:JSON.stringify(["180"]), point:10 },
-    { id:"2", soal:"Manakah bilangan yang merupakan kelipatan 4? (pilih SEMUA yang benar)", gambar:"", jenisSoal:"Pilihan Ganda Kompleks",
-      opsi:JSON.stringify(["12","15","20","22"]), jawabanBenar:JSON.stringify(["12","20"]), point:20 },
-    { id:"3", soal:"Tentukan pernyataan berikut, Benar atau Salah?", gambar:"", jenisSoal:"Benar/Salah Kompleks",
-      opsi:JSON.stringify(["5 × 5 = 25","3 × 8 = 21","7 + 9 = 16"]), jawabanBenar:JSON.stringify(["Benar","Salah","Benar"]), point:20 },
+    { id:"1", soal:"Berapakah hasil dari 12 × 15?", gambar:"", jenisSoal:"Pilihan Ganda", opsi:JSON.stringify(["150","170","180","160"]), jawabanBenar:JSON.stringify(["180"]), point:10 },
+    { id:"2", soal:"Manakah bilangan yang merupakan kelipatan 4? (pilih SEMUA yang benar)", gambar:"", jenisSoal:"Pilihan Ganda Kompleks", opsi:JSON.stringify(["12","15","20","22"]), jawabanBenar:JSON.stringify(["12","20"]), point:20 },
+    { id:"3", soal:"Tentukan pernyataan berikut, Benar atau Salah?", gambar:"", jenisSoal:"Benar/Salah Kompleks", opsi:JSON.stringify(["5 × 5 = 25","3 × 8 = 21","7 + 9 = 16"]), jawabanBenar:JSON.stringify(["Benar","Salah","Benar"]), point:20 },
   ],
   "IPAS_Sumatif 1": [
-    { id:"1", soal:"Apa yang dimaksud dengan fotosintesis?", gambar:"", jenisSoal:"Pilihan Ganda",
-      opsi:JSON.stringify(["Proses pembuatan makanan pada tumbuhan dengan bantuan sinar matahari","Proses pernapasan pada hewan","Proses penyerapan air oleh akar","Proses penyerbukan pada bunga"]),
-      jawabanBenar:JSON.stringify(["Proses pembuatan makanan pada tumbuhan dengan bantuan sinar matahari"]), point:10 },
+    { id:"1", soal:"Apa yang dimaksud dengan fotosintesis?", gambar:"", jenisSoal:"Pilihan Ganda", opsi:JSON.stringify(["Proses pembuatan makanan pada tumbuhan dengan bantuan sinar matahari","Proses pernapasan pada hewan","Proses penyerapan air oleh akar","Proses penyerbukan pada bunga"]), jawabanBenar:JSON.stringify(["Proses pembuatan makanan pada tumbuhan dengan bantuan sinar matahari"]), point:10 },
   ],
 };
 
-// ── Utility Google Drive ──
 function extractDriveFileId(url) {
   if (!url || typeof url !== "string") return null;
   url = url.trim();
@@ -250,119 +160,61 @@ function extractDriveFileId(url) {
   const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
   if (m2) return m2[1];
   const m3 = url.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
-  if (m3) return m3[1];
-  return null;
+  return m3 ? m3[1] : null;
 }
-function isDriveUrl(url) {
-  return url && (url.includes("drive.google.com") || url.includes("docs.google.com"));
-}
+function isDriveUrl(url) { return url && (url.includes("drive.google.com") || url.includes("docs.google.com")); }
 
-// ── GambarSoal: Drive → iframe, URL biasa → img
-// Tidak ada bingkai/border — tampil apa adanya ──
 function GambarSoal({ url, alt = "Gambar soal" }) {
   if (!url || !url.trim()) return null;
   if (isDriveUrl(url)) {
     const fileId = extractDriveFileId(url);
-    if (!fileId) return (
-      <p className="text-xs text-red-500 text-center py-2">⚠️ Format link Google Drive tidak dikenali.</p>
-    );
+    if (!fileId) return <p className="text-xs text-red-500 text-center py-2">⚠️ Format link Google Drive tidak dikenali.</p>;
     return (
       <div className="relative w-full overflow-hidden" style={{ height:"220px" }}>
-        <iframe
-          src={`https://drive.google.com/file/d/${fileId}/preview`}
-          title={alt}
-          allow="autoplay"
-          className="absolute inset-0 w-full h-full border-0"
-          style={{ pointerEvents:"none" }}
-        />
+        <iframe src={`https://drive.google.com/file/d/${fileId}/preview`} title={alt} allow="autoplay"
+          className="absolute inset-0 w-full h-full border-0" style={{ pointerEvents:"none" }} />
       </div>
     );
   }
-  // URL gambar biasa — tampil tanpa bingkai apapun
-  return (
-    <img
-      src={url}
-      alt={alt}
-      className="w-full max-h-60 object-contain"
-      onError={e => {
-        e.target.style.display = "none";
-        const msg = document.createElement("p");
-        msg.className = "text-xs text-red-500 text-center py-2";
-        msg.textContent = "⚠️ Gambar tidak dapat dimuat.";
-        e.target.parentNode.appendChild(msg);
-      }}
-    />
-  );
+  return <img src={url} alt={alt} className="w-full max-h-60 object-contain" onError={e => { e.target.style.display = "none"; e.target.parentNode.appendChild(<p className="text-xs text-red-500 text-center py-2">⚠️ Gambar tidak dapat dimuat.</p>); }} />;
 }
 
-// ── LogoSekolah: tampilkan logo dari URL manapun ──
-// Fallback berantai: thumbnail → uc?export=view → emoji
 function LogoSekolah({ url, className = "" }) {
   const [errCount, setErrCount] = useState(0);
-  useEffect(() => { setErrCount(0); }, [url]);
-
-  if (!url || !url.trim() || errCount >= 3) {
-    return <span className="text-4xl select-none">🏫</span>;
-  }
-
+  useEffect(() => setErrCount(0), [url]);
+  if (!url || !url.trim() || errCount >= 3) return <span className="text-4xl select-none">🏫</span>;
   let src = url.trim();
   if (isDriveUrl(url)) {
     const fileId = extractDriveFileId(url);
     if (!fileId) return <span className="text-4xl select-none">🏫</span>;
-    if (errCount === 0) {
-      src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200-h200`;
-    } else if (errCount === 1) {
-      src = `https://drive.google.com/uc?export=view&id=${fileId}`;
-    } else {
-      // Terakhir: coba lekukan lain — embed thumbnail tanpa crossOrigin
-      src = `https://lh3.googleusercontent.com/d/${fileId}=w200-h200`;
-    }
+    if (errCount === 0) src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w200-h200`;
+    else if (errCount === 1) src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+    else src = `https://lh3.googleusercontent.com/d/${fileId}=w200-h200`;
   }
-
-  return (
-    <img
-      src={src}
-      alt="Logo sekolah"
-      className={className}
-      referrerPolicy="no-referrer"
-      onError={() => setErrCount(c => c + 1)}
-    />
-  );
+  return <img src={src} alt="Logo sekolah" className={className} referrerPolicy="no-referrer" onError={() => setErrCount(c => c + 1)} />;
 }
 
-// ── Generate PDF langsung download menggunakan jsPDF (CDN) ──
-// Menyertakan review soal yang dijawab tidak sempurna (tanpa kunci jawaban)
-// ── unduhPDF: generate PDF langsung download via jsPDF ──
-// Menampilkan review soal + opsi salah ditandai jelas. Tanpa kunci jawaban.
 async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, nipGuru, kotaTTD, namaSekolah }) {
   if (!window.jspdf) {
-    await new Promise((resolve, reject) => {
+    await new Promise((res, rej) => {
       const s = document.createElement("script");
       s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-      s.onload = resolve; s.onerror = reject;
+      s.onload = res; s.onerror = rej;
       document.head.appendChild(s);
     });
   }
-
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const tgl = new Date().toLocaleDateString("id-ID", { day:"numeric", month:"long", year:"numeric" });
-  const W = 210; const margin = 18; const colW = W - margin * 2;
+  const W = 210, margin = 18, colW = W - margin * 2;
   let y = margin;
-
-  const checkY = (need = 10) => {
-    if (y + need > 280) { doc.addPage(); y = margin; }
-  };
-
+  const checkY = (need = 10) => { if (y + need > 280) { doc.addPage(); y = margin; } };
   const wrappedText = (text, x, yy, maxW, lineH = 5) => {
     const lines = doc.splitTextToSize(String(text), maxW);
     lines.forEach((l, i) => doc.text(l, x, yy + i * lineH));
     return lines.length * lineH;
   };
-
-  // ── HEADER BIRU ──
-  doc.setFillColor(30, 58, 138);
-  doc.rect(0, 0, W, 28, "F");
+  doc.setFillColor(30, 58, 138); doc.rect(0, 0, W, 28, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold"); doc.setFontSize(14);
   doc.text("LAPORAN HASIL ASESMEN", W / 2, 11, { align: "center" });
@@ -371,18 +223,13 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
   doc.setFontSize(8);
   doc.text("Aplikasi Web Asesmen — Copyright © 2026 Hairur Rahman", W / 2, 24, { align: "center" });
   y = 36;
-
-  // ── DATA SISWA ──
   doc.setTextColor(30, 30, 30);
   doc.setFillColor(241, 245, 249);
   doc.rect(margin, y - 5, colW, 7, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(10);
   doc.text("DATA SISWA", margin + 2, y);
   y += 6;
-  const dataRows = [
-    ["Nama", siswa.nama], ["NISN", siswa.nisn], ["No. Absen", siswa.noAbsen],
-    ["Mata Pelajaran", siswa.mapel], ["Jenis Asesmen", siswa.asesmen], ["Tanggal", tgl],
-  ];
+  const dataRows = [["Nama", siswa.nama], ["NISN", siswa.nisn], ["No. Absen", siswa.noAbsen], ["Mata Pelajaran", siswa.mapel], ["Jenis Asesmen", siswa.asesmen], ["Tanggal", tgl]];
   doc.setFontSize(9.5);
   dataRows.forEach(([k, v]) => {
     checkY(7);
@@ -391,8 +238,6 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
     y += 6;
   });
   y += 4;
-
-  // ── NILAI AKHIR ──
   checkY(32);
   const predikat = hasilAkhir.nilai >= 90 ? "Sangat Baik" : hasilAkhir.nilai >= 75 ? "Baik" : hasilAkhir.nilai >= 60 ? "Cukup" : "Perlu Bimbingan";
   const nilaiRGB = hasilAkhir.nilai >= 75 ? [22,163,74] : hasilAkhir.nilai >= 50 ? [217,119,6] : [220,38,38];
@@ -405,15 +250,12 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
   doc.setTextColor(100,100,100); doc.setFont("helvetica", "normal"); doc.setFontSize(8.5);
   doc.text(`Point: ${hasilAkhir.didapatPoint} / ${hasilAkhir.totalPoint}`, W / 2, y + 27, { align: "center" });
   y += 33;
-
-  // ── RINCIAN POIN PER SOAL ──
   checkY(14);
   doc.setTextColor(30,30,30);
   doc.setFillColor(241,245,249); doc.rect(margin, y - 5, colW, 7, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(10);
   doc.text("RINCIAN POIN PER SOAL", margin + 2, y);
   y += 4;
-
   const cols = { no:12, jenis:28, ket:80, dapat:22, maks:22 };
   const colX = { no:margin, jenis:margin+cols.no, ket:margin+cols.no+cols.jenis, dapat:margin+cols.no+cols.jenis+cols.ket, maks:margin+cols.no+cols.jenis+cols.ket+cols.dapat };
   doc.setFillColor(30,58,138); doc.rect(margin, y, colW, 7, "F");
@@ -423,7 +265,6 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
     doc.text(h, xArr[i], y + 5);
   });
   y += 7;
-
   doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
   hasilAkhir.detail.forEach((d, i) => {
     checkY(7);
@@ -439,7 +280,6 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
     doc.text(String(d.max), colX.maks+cols.maks/2, y, { align:"center" });
     y += 6.5;
   });
-
   checkY(8);
   doc.setFillColor(226,232,240); doc.rect(margin, y-4.5, colW, 7, "F");
   doc.setFont("helvetica","bold"); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
@@ -447,108 +287,62 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
   doc.text(String(hasilAkhir.didapatPoint), colX.dapat+cols.dapat/2, y, { align:"center" });
   doc.text(String(hasilAkhir.totalPoint), colX.maks+cols.maks/2, y, { align:"center" });
   y += 10;
-
-  // ── REVIEW SOAL YANG TIDAK SEMPURNA ──
-  // Tampilkan semua opsi + tandai mana yang salah (jawaban siswa yang keliru)
-  // Tidak menampilkan kunci jawaban
-  const soalSalah = soalList.filter((s, idx) => {
-    const d = hasilAkhir.detail[idx];
-    return d && d.dapat < d.max;
-  });
-
+  const soalSalah = soalList.filter((s, idx) => { const d = hasilAkhir.detail[idx]; return d && d.dapat < d.max; });
   if (soalSalah.length > 0) {
     checkY(16);
-    doc.setFillColor(254,243,199);
-    doc.rect(margin, y-5, colW, 8, "F");
+    doc.setFillColor(254,243,199); doc.rect(margin, y-5, colW, 8, "F");
     doc.setFont("helvetica","bold"); doc.setFontSize(10); doc.setTextColor(146,64,14);
     doc.text(`REVIEW SOAL YANG PERLU DIPELAJARI ULANG (${soalSalah.length} soal)`, margin+2, y);
     doc.setFontSize(7.5); doc.setFont("helvetica","italic"); doc.setTextColor(120,80,20);
     doc.text("Opsi yang kamu jawab salah diberi tanda [X]. Opsi yang kamu jawab benar diberi tanda [v].", margin+2, y+5.5);
     y += 11;
-
     soalSalah.forEach((s) => {
       const idxAsli = soalList.findIndex(x => x.id === s.id);
       const d = hasilAkhir.detail[idxAsli];
       const opsiArr = JSON.parse(s.opsi || "[]");
       const benarArr = JSON.parse(s.jawabanBenar || "[]");
       const jwbSiswa = jawabanSiswa[s.id] || [];
-
       checkY(22);
-
-      // Header soal — kotak abu muda
-      doc.setFillColor(241,245,249);
-      doc.rect(margin, y-5, colW, 7, "F");
+      doc.setFillColor(241,245,249); doc.rect(margin, y-5, colW, 7, "F");
       doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(30,30,30);
       doc.text(`Soal ${idxAsli+1}   [${s.jenisSoal}]   Poin kamu: ${d.dapat} / ${d.max}`, margin+2, y);
       y += 5.5;
-
-      // Teks soal
       doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
       const soalLines = doc.splitTextToSize(s.soal, colW - 4);
       soalLines.forEach(l => { checkY(5); doc.text(l, margin+3, y); y += 4.8; });
       y += 2;
-
       if (s.jenisSoal === "Pilihan Ganda") {
-        // Tampilkan semua opsi, tandai jawaban siswa sebagai salah (karena soal ini masuk review)
         opsiArr.forEach((opsi, oi) => {
           checkY(7);
           const dipilihSiswa = jwbSiswa[0] === opsi;
-          // Jawaban siswa yang salah → [X] merah
-          // Opsi lain → titik abu
           if (dipilihSiswa) {
-            doc.setFillColor(254,226,226); // merah muda
+            doc.setFillColor(254,226,226);
             const oH = doc.splitTextToSize(`${String.fromCharCode(65+oi)}. ${opsi}`, colW-14).length * 5 + 3;
             doc.rect(margin+2, y-4, colW-4, oH, "F");
-            doc.setTextColor(185,28,28);
-            doc.setFont("helvetica","bold");
-            doc.text("[X]", margin+4, y);
+            doc.setTextColor(185,28,28); doc.setFont("helvetica","bold"); doc.text("[X]", margin+4, y);
           } else {
-            doc.setTextColor(100,100,100);
-            doc.setFont("helvetica","normal");
-            doc.text("[ ]", margin+4, y);
+            doc.setTextColor(100,100,100); doc.setFont("helvetica","normal"); doc.text("[ ]", margin+4, y);
           }
           doc.setFont("helvetica", dipilihSiswa ? "bold" : "normal");
           doc.setTextColor(dipilihSiswa ? 185 : 60, dipilihSiswa ? 28 : 60, dipilihSiswa ? 28 : 60);
           const labelH = wrappedText(`${String.fromCharCode(65+oi)}. ${opsi}`, margin+12, y, colW-16, 5);
           y += Math.max(labelH, 5) + 1;
         });
-        // Keterangan tanpa kunci
         checkY(6);
         doc.setTextColor(146,64,14); doc.setFont("helvetica","italic"); doc.setFontSize(7.5);
         doc.text("* Opsi bertanda [X] adalah jawaban kamu yang tidak tepat. Pelajari kembali materi ini.", margin+3, y);
         y += 5;
-
       } else if (s.jenisSoal === "Pilihan Ganda Kompleks") {
-        // Tampilkan semua opsi. Tandai:
-        //   dipilih siswa = tampilkan [v] atau [X] tergantung apakah seharusnya dipilih
-        //   tidak dipilih siswa tapi seharusnya dipilih = tampilkan [!] (terlewat)
-        //   tidak dipilih & tidak perlu dipilih = [ ]
         opsiArr.forEach((opsi, oi) => {
           checkY(7);
           const dipilihSiswa = jwbSiswa.includes(opsi);
           const harusBenar = benarArr.includes(opsi);
-          const opsiTepat = dipilihSiswa === harusBenar;
-
           let simbol, bgColor, textColor, fontStyle;
-          if (dipilihSiswa && harusBenar) {
-            // Dipilih & benar → [v] hijau
-            simbol = "[v]"; bgColor = [220,252,231]; textColor = [21,128,61]; fontStyle = "normal";
-          } else if (dipilihSiswa && !harusBenar) {
-            // Dipilih tapi harusnya tidak → [X] merah = salah pilih
-            simbol = "[X]"; bgColor = [254,226,226]; textColor = [185,28,28]; fontStyle = "bold";
-          } else if (!dipilihSiswa && harusBenar) {
-            // Tidak dipilih padahal harusnya → [!] oranye = terlewat
-            simbol = "[!]"; bgColor = [255,237,213]; textColor = [154,52,18]; fontStyle = "bold";
-          } else {
-            // Tidak dipilih & tidak perlu → [ ] abu
-            simbol = "[ ]"; bgColor = null; textColor = [100,100,100]; fontStyle = "normal";
-          }
-
-          if (bgColor) {
-            const oH = doc.splitTextToSize(`${String.fromCharCode(65+oi)}. ${opsi}`, colW-14).length * 5 + 3;
-            doc.setFillColor(...bgColor);
-            doc.rect(margin+2, y-4, colW-4, oH, "F");
-          }
+          if (dipilihSiswa && harusBenar) { simbol = "[v]"; bgColor = [220,252,231]; textColor = [21,128,61]; fontStyle = "normal"; }
+          else if (dipilihSiswa && !harusBenar) { simbol = "[X]"; bgColor = [254,226,226]; textColor = [185,28,28]; fontStyle = "bold"; }
+          else if (!dipilihSiswa && harusBenar) { simbol = "[!]"; bgColor = [255,237,213]; textColor = [154,52,18]; fontStyle = "bold"; }
+          else { simbol = "[ ]"; bgColor = null; textColor = [100,100,100]; fontStyle = "normal"; }
+          if (bgColor) { const oH = doc.splitTextToSize(`${String.fromCharCode(65+oi)}. ${opsi}`, colW-14).length * 5 + 3; doc.setFillColor(...bgColor); doc.rect(margin+2, y-4, colW-4, oH, "F"); }
           doc.setTextColor(...textColor); doc.setFont("helvetica", fontStyle); doc.setFontSize(8.5);
           doc.text(simbol, margin+4, y);
           const lH = wrappedText(`${String.fromCharCode(65+oi)}. ${opsi}`, margin+12, y, colW-16, 5);
@@ -558,30 +352,18 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
         doc.setTextColor(146,64,14); doc.setFont("helvetica","italic"); doc.setFontSize(7.5);
         doc.text("* [X]=salah pilih  [!]=seharusnya dipilih tapi terlewat  [v]=tepat  [ ]=tidak dipilih", margin+3, y);
         y += 5;
-
       } else {
-        // B/S Kompleks: tampilkan pernyataan + jawaban siswa. Tandai yang salah.
         opsiArr.forEach((opsi, oi) => {
           checkY(8);
           const jwbSiswaItem = jwbSiswa[oi] || null;
           const jwbBenar = benarArr[oi];
           const tepat = jwbSiswaItem === jwbBenar;
-
-          if (!tepat) {
-            doc.setFillColor(254,226,226);
-            const oH = doc.splitTextToSize(`${oi+1}. ${opsi}`, colW-30).length * 5 + 3;
-            doc.rect(margin+2, y-4, colW-4, oH, "F");
-          }
-
-          doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
-          doc.setTextColor(40,40,40);
+          if (!tepat) { doc.setFillColor(254,226,226); const oH = doc.splitTextToSize(`${oi+1}. ${opsi}`, colW-30).length * 5 + 3; doc.rect(margin+2, y-4, colW-4, oH, "F"); }
+          doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(40,40,40);
           const pH = wrappedText(`${oi+1}. ${opsi}`, margin+4, y, colW-30, 5);
-
-          // Kolom kanan: jawaban siswa + status
           const jwbLabel = jwbSiswaItem || "(tidak dijawab)";
           const statusLabel = tepat ? "[v]" : "[X]";
-          doc.setFont("helvetica","bold");
-          doc.setTextColor(tepat ? 21 : 185, tepat ? 128 : 28, tepat ? 61 : 28);
+          doc.setFont("helvetica","bold"); doc.setTextColor(tepat ? 21 : 185, tepat ? 128 : 28, tepat ? 61 : 28);
           doc.text(`${statusLabel} ${jwbLabel}`, W - margin - 2, y, { align:"right" });
           doc.setFont("helvetica","normal");
           y += Math.max(pH, 6) + 1;
@@ -591,21 +373,16 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
         doc.text("* [X] = jawaban kamu tidak tepat, [v] = tepat", margin+3, y);
         y += 5;
       }
-
-      // Garis pemisah antar soal
       checkY(5);
       doc.setDrawColor(200,200,200); doc.setLineWidth(0.2);
       doc.line(margin, y, W-margin, y);
       y += 6;
     });
   }
-
-  // ── TANDA TANGAN ──
   checkY(40);
   doc.setTextColor(30,30,30);
   const ttdX = W - margin - 50;
   doc.setFont("helvetica","normal"); doc.setFontSize(9);
-  // Kota + tanggal
   const kotaLabel = kotaTTD ? `${kotaTTD}, ${tgl}` : tgl;
   doc.text(kotaLabel, ttdX, y, { align:"center" });
   y += 5;
@@ -616,25 +393,16 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
   y += 5;
   doc.setFont("helvetica","bold"); doc.setFontSize(9);
   doc.text(namaGuru || "________________________", ttdX, y, { align:"center" });
-  if (nipGuru) {
-    y += 5;
-    doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
-    doc.text(`NIP. ${nipGuru}`, ttdX, y, { align:"center" });
-  }
-
-  // Footer
+  if (nipGuru) { y += 5; doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.text(`NIP. ${nipGuru}`, ttdX, y, { align:"center" }); }
   checkY(8);
   doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(150,150,150);
   doc.text("Dokumen ini digenerate otomatis oleh Aplikasi Web Asesmen", W/2, 290, { align:"center" });
-
-  // ── SIMPAN — nama file tanpa nama siswa ──
   const mapelKode = siswa.mapel.replace(/\s+/g,"_");
   const asesmenKode = siswa.asesmen.replace(/\s+/g,"_");
   const tanggalKode = new Date().toISOString().slice(0,10);
   doc.save(`Laporan_${mapelKode}_${asesmenKode}_${tanggalKode}.pdf`);
 }
 
-// ── Toast ──
 const toastColors = { success:"#22c55e", error:"#ef4444", warning:"#f59e0b", info:"#3b82f6" };
 function Toast({ toasts }) {
   return (
@@ -659,18 +427,13 @@ function useToast() {
   return { toasts, addToast };
 }
 
-// ── Header ── warna putih/netral agar logo warna apapun tetap terlihat jelas
 function AppHeader({ logoUrl, namaSekolah }) {
   return (
     <header className="bg-white border-b border-slate-200 shadow-sm">
       <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col items-center gap-1">
         <div className="flex items-center gap-4">
           <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth:"52px" }}>
-            {logoUrl ? (
-              <LogoSekolah url={logoUrl} className="max-h-14 max-w-20 object-contain" />
-            ) : (
-              <span className="text-4xl">🏫</span>
-            )}
+            {logoUrl ? <LogoSekolah url={logoUrl} className="max-h-14 max-w-20 object-contain" /> : <span className="text-4xl">🏫</span>}
           </div>
           <div className="text-center">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Aplikasi Web Asesmen</p>
@@ -683,619 +446,1363 @@ function AppHeader({ logoUrl, namaSekolah }) {
   );
 }
 
-// ── Login Guru ──
 function GuruLogin({ onLogin }) {
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState("");
-  const handle = () => {
-    if (pwd === GURU_PASSWORD) { onLogin(); setErr(""); }
-    else setErr("Password salah!");
-  };
+  const handle = () => { if (pwd === GURU_PASSWORD) { onLogin(); setErr(""); } else setErr("Password salah!"); };
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm text-center">
         <div className="text-5xl mb-3">🔐</div>
         <h2 className="text-2xl font-bold text-slate-800 mb-1">Mode Guru</h2>
         <p className="text-slate-500 text-sm mb-5">Masukkan password untuk masuk</p>
-        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}
-          onKeyDown={e => e.key==="Enter" && handle()} placeholder="Password guru..."
-          className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-blue-500 mb-3" />
+        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key==="Enter" && handle()} placeholder="Password guru..." className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-blue-500 mb-3" />
         {err && <p className="text-red-500 text-sm mb-3">{err}</p>}
-        <button onClick={handle} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">
-          Masuk
-        </button>
+        <button onClick={handle} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">Masuk</button>
       </div>
     </div>
   );
 }
 
+function StatCard({ icon, label, value, color="blue" }) {
+  const colors = { blue:"bg-blue-50 text-blue-700 border-blue-200", green:"bg-green-50 text-green-700 border-green-200", purple:"bg-purple-50 text-purple-700 border-purple-200" };
+  return (
+    <div className={`rounded-2xl border p-4 ${colors[color]}`}>
+      <div className="text-3xl mb-2">{icon}</div>
+      <div className="text-2xl font-extrabold">{value}</div>
+      <div className="text-xs font-semibold mt-1 opacity-75">{label}</div>
+    </div>
+  );
+}
+
+function Field({ label, children, hint }) {
+  return (
+    <div>
+      <label className="text-xs font-semibold text-slate-600 block mb-1">{label}</label>
+      {children}
+      {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+const inp = "w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500";
+const btn = (color="blue") => ({
+  blue:"bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+  green:"bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+  red:"bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+  amber:"bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+  slate:"bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+}[color]);
+
 // ============================================================
-// PANEL GURU
+// API helpers
 // ============================================================
-function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, onSaveScriptUrl }) {
-  const [activeTab, setActiveTab] = useState("soal");
+async function fetchMapelList(scriptUrl) {
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) return [...DEFAULT_MAPEL];
+  try {
+    const res = await fetch(`${url}?action=getAllMapel`);
+    const data = await res.json();
+    if (data.status === "success") return data.data;
+    return [...DEFAULT_MAPEL];
+  } catch { return [...DEFAULT_MAPEL]; }
+}
+async function fetchAsesmenList(scriptUrl) {
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) return [...DEFAULT_ASESMEN];
+  try {
+    const res = await fetch(`${url}?action=getAllAsesmen`);
+    const data = await res.json();
+    if (data.status === "success") return data.data;
+    return [...DEFAULT_ASESMEN];
+  } catch { return [...DEFAULT_ASESMEN]; }
+}
+async function fetchKKM(scriptUrl) {
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) return {};
+  try {
+    const res = await fetch(`${url}?action=getKKM`);
+    const data = await res.json();
+    if (data.status === "success") return data.data;
+    return {};
+  } catch { return {}; }
+}
+async function simpanKKM(scriptUrl, kkmData) {
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) return false;
+  try {
+    const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanKKM", kkm: kkmData }) });
+    const d = await res.json();
+    return d.status === "success";
+  } catch { return false; }
+}
 
-  // Form soal
-  const [soal, setSoal] = useState("");
-  const [gambar, setGambar] = useState("");
-  const [showPreview, setShowPreview] = useState(false);
-  const [point, setPoint] = useState(10);
-  const [mapel, setMapel] = useState(MAPEL_LIST[0]);
-  const [asesmen, setAsesmen] = useState(ASESMEN_LIST[0]);
-  const [jenisSoal, setJenisSoal] = useState(JENIS_SOAL[0]);
-  const [opsi, setOpsi] = useState(defaultOpsi(JENIS_SOAL[0]));
-  const [jawabanBenar, setJawabanBenar] = useState([]);
-  const [loading, setLoading] = useState(false);
+// ============================================================
+// DASHBOARD (dengan profil guru)
+// ============================================================
+function TabDashboard({ onNav, addToast, settings }) {
+  const [stats, setStats] = useState({ siswa:0, soal:0, hasil:0 });
+  const [loadingStats, setLoadingStats] = useState(false);
+  
+  useEffect(() => {
+    const url = APPS_SCRIPT_URL;
+    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
+    setLoadingStats(true);
+    fetch(`${url}?action=getStats`)
+      .then(r => r.json())
+      .then(d => { if (d.status==="success") setStats(d.data); })
+      .catch(()=>{})
+      .finally(()=>setLoadingStats(false));
+  }, []);
 
-  // Token
-  const [tokenMapel, setTokenMapel] = useState(MAPEL_LIST[0]);
-  const [tokenAsesmen, setTokenAsesmen] = useState(ASESMEN_LIST[0]);
-  const [tokenValue, setTokenValue] = useState("");
-
-  // Pengaturan
-  const [logoInput, setLogoInput] = useState(settings.logoUrl || "");
-  const [namaInput, setNamaInput] = useState(settings.namaSekolah || "");
-  const [namaGuruInput, setNamaGuruInput] = useState(settings.namaGuru || "");
-  const [nipGuruInput, setNipGuruInput] = useState(settings.nipGuru || "");
-  const [kotaTTDInput, setKotaTTDInput] = useState(settings.kotaTTD || "");
-  const [urlInput, setUrlInput] = useState(scriptUrl || "");
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl || "");
-  const [durasiInput, setDurasiInput] = useState(settings.durasiMenit || 60);
-  const [savedSpreadsheetUrl, setSavedSpreadsheetUrl] = useState(settings.spreadsheetUrl || "");
-
-  // ── Ganti jenis soal: reset opsi ke default count + reset jawaban ──
-  const handleGantiJenis = (jenis) => {
-    setJenisSoal(jenis);
-    setOpsi(defaultOpsi(jenis));
-    setJawabanBenar([]);
-  };
-
-  const handleAddOpsi = () => setOpsi([...opsi, ""]);
-  const handleOpsiChange = (i, v) => { const a = [...opsi]; a[i] = v; setOpsi(a); };
-  const handleRemoveOpsi = (i) => {
-    setOpsi(opsi.filter((_, idx) => idx !== i));
-    setJawabanBenar(jawabanBenar.filter(j => j !== opsi[i]));
-  };
-  const handleJawabanPG = (v) => setJawabanBenar([v]);
-  const handleJawabanPGK = (v) => setJawabanBenar(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v]);
-  const handleJawabanBS = (idx, val) => {
-    const arr = [...(jawabanBenar.length === opsi.length ? jawabanBenar : opsi.map(() => ""))];
-    arr[idx] = val;
-    setJawabanBenar(arr);
-  };
-
-  // ── Auto-paste vertikal: paste teks multiline ke opsi ──
-  const handleOpsiPaste = (e, startIdx) => {
-    const text = e.clipboardData.getData("text");
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length <= 1) return; // biarkan paste biasa
-    e.preventDefault();
-    const newOpsi = [...opsi];
-    lines.forEach((line, i) => {
-      const idx = startIdx + i;
-      if (idx < newOpsi.length) {
-        newOpsi[idx] = line;
-      } else {
-        newOpsi.push(line);
-      }
-    });
-    setOpsi(newOpsi);
-    addToast(`✅ ${lines.length} opsi berhasil di-paste sekaligus!`, "success");
-  };
-
-  const handleSubmitSoal = async () => {
-    if (!soal.trim()) return addToast("Soal tidak boleh kosong!", "error");
-    if (!point || isNaN(point)) return addToast("Point harus berupa angka!", "error");
-    const filledOpsi = opsi.filter(o => o.trim());
-    if (filledOpsi.length < 2) return addToast("Minimal 2 opsi jawaban!", "error");
-    if (jawabanBenar.length === 0) return addToast("Pilih jawaban yang benar!", "error");
-    const payload = { action:"tambahSoal", mapel, asesmen, soal, gambar, jenisSoal,
-      opsi:JSON.stringify(filledOpsi), jawabanBenar:JSON.stringify(jawabanBenar), point:Number(point) };
-    setLoading(true);
-    try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, { method:"POST", body:JSON.stringify(payload) });
-      const data = await res.json();
-      if (data.status === "success") {
-        addToast("Soal berhasil disimpan! ✅", "success");
-        setSoal(""); setGambar(""); setOpsi(defaultOpsi(jenisSoal)); setJawabanBenar([]); setShowPreview(false);
-      } else addToast(data.message || "Gagal menyimpan soal.", "error");
-    } catch { addToast("Mode Demo: Belum terhubung ke Apps Script.", "warning"); }
-    finally { setLoading(false); }
-  };
-
-  const handleSaveToken = async () => {
-    if (!tokenValue.trim()) return addToast("Isi token terlebih dahulu!", "error");
-    try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanToken", mapel:tokenMapel, asesmen:tokenAsesmen, token:tokenValue }) });
-      addToast(`Token "${tokenValue}" disimpan!`, "success");
-    } catch { addToast(`Demo: Token "${tokenValue}" (belum terhubung ke server)`, "warning"); }
-  };
-
-  const handleSavePengaturan = async () => {
-    const durasi = Number(durasiInput);
-    if (!durasi || durasi < 1 || durasi > 300) return addToast("Durasi harus antara 1–300 menit!", "error");
-
-    const newSettings = {
-      logoUrl: logoInput, namaSekolah: namaInput, namaGuru: namaGuruInput,
-      nipGuru: nipGuruInput, kotaTTD: kotaTTDInput, durasiMenit: durasi, spreadsheetUrl,
-    };
-
-    // Simpan ke localStorage dulu (instant, offline-capable)
-    onSaveSettings(newSettings);
-    onSaveScriptUrl(urlInput);
-    setSavedSpreadsheetUrl(spreadsheetUrl);
-
-    // Push ke Spreadsheet — pakai URL input, atau localStorage, atau konstanta hardcode
-    const url = urlInput || scriptUrl || APPS_SCRIPT_URL;
-    if (url && !url.includes("YOUR_APPS_SCRIPT_ID")) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          body: JSON.stringify({ action: "simpanPengaturan", ...newSettings }),
-        });
-        const data = await res.json();
-        if (data.status === "success") {
-          addToast("✅ Pengaturan disimpan ke Spreadsheet — sinkron di semua perangkat!", "success");
-        } else {
-          addToast("Tersimpan lokal. Gagal sinkron ke Spreadsheet: " + (data.message || ""), "warning");
-        }
-      } catch {
-        addToast("Tersimpan lokal. Tidak bisa terhubung ke Apps Script.", "warning");
-      }
-    } else {
-      addToast("Pengaturan disimpan lokal. Isi URL Apps Script untuk sinkron antar perangkat.", "info");
-    }
-  };
-
-  const jam = Math.floor(durasiInput / 60);
-  const menit = Number(durasiInput) % 60;
-  const durasiDisplay = jam > 0 ? `${jam} jam ${menit > 0 ? menit + " menit" : ""}` : `${menit} menit`;
-
-  const tabs = [
-    { id:"soal", label:"📝 Input Soal" },
-    { id:"token", label:"🔑 Token" },
-    { id:"pengaturan", label:"⚙️ Pengaturan" },
-    { id:"panduan", label:"📖 Panduan" },
+  const aksiCepat = [
+    { icon:"✏️", label:"Buat Soal Baru", page:"soal", color:"bg-blue-600 hover:bg-blue-700" },
+    { icon:"🔑", label:"Kelola Token", page:"mapel", color:"bg-green-600 hover:bg-green-700" },
+    { icon:"📊", label:"Lihat Hasil Ujian", page:"rekap", color:"bg-purple-600 hover:bg-purple-700" },
+    { icon:"👤", label:"Data Siswa", page:"siswa", color:"bg-amber-500 hover:bg-amber-600" },
   ];
 
+  const getInitials = () => {
+    const namaGuru = settings.namaGuru || "Guru";
+    return namaGuru.split(" ").map(n => n[0]).join("").toUpperCase().slice(0,2);
+  };
+
+  // Handler error gambar
+  const handleImageError = (e) => {
+    e.target.onerror = null;
+    e.target.src = `https://ui-avatars.com/api/?background=blue&color=fff&name=${getInitials()}`;
+  };
+
   return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white px-4 py-4 flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-lg">🏫 Panel Guru</h2>
-          <p className="text-slate-400 text-xs">Kelola soal & pengaturan</p>
+    <div className="space-y-6">
+      {/* Profil Guru */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center gap-4 shadow-sm">
+      <div className="flex-shrink-0">
+  {settings.fotoGuru ? (
+    <img 
+      src={settings.fotoGuru} 
+      alt="Foto Guru" 
+      className="w-20 h-20 rounded-full object-cover border-3 border-blue-500 shadow-md" 
+      onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?background=blue&color=fff&name=${getInitials()}`; }}
+    />
+  ) : (
+    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+      {getInitials()}
+    </div>
+  )}
+</div>  
+        <div className="flex-1">
+          <h2 className="text-xl font-extrabold text-slate-800">Selamat Datang, {settings.namaGuru || "Guru"}!</h2>
+          <p className="text-sm text-slate-500">{settings.namaSekolah || "Portal Ujian Digital"}</p>
+          {settings.nipGuru && <p className="text-xs text-slate-400 mt-1">NIP: {settings.nipGuru}</p>}
         </div>
-        <button onClick={onLogout} className="bg-red-500 hover:bg-red-600 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors">
-          Keluar
-        </button>
       </div>
-      <div className="overflow-x-auto">
-        <div className="flex border-b border-slate-200 bg-white min-w-max">
-          {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
-              className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors ${activeTab===t.id ? "border-b-2 border-blue-600 text-blue-600 bg-blue-50" : "text-slate-600 hover:bg-slate-50"}`}>
-              {t.label}
+
+      {/* Statistik */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <StatCard icon="👤" label="Total Siswa" value={loadingStats ? "..." : stats.siswa} color="blue" />
+        <StatCard icon="📝" label="Bank Soal" value={loadingStats ? "..." : stats.soal} color="green" />
+        <StatCard icon="📋" label="Hasil Ujian" value={loadingStats ? "..." : stats.hasil} color="purple" />
+      </div>
+
+      {/* Aksi cepat */}
+      <div>
+        <h3 className="text-sm font-bold text-slate-700 mb-3">⚡ Aksi Cepat</h3>
+        <div className="grid grid-cols-2 gap-3">
+          {aksiCepat.map(a => (
+            <button key={a.page} onClick={() => onNav(a.page)} className={`${a.color} text-white rounded-2xl p-4 text-left transition-colors flex items-center gap-3`}>
+              <span className="text-2xl">{a.icon}</span>
+              <span className="font-bold text-sm">{a.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto p-4">
-
-        {/* ── TAB SOAL ── */}
-        {activeTab === "soal" && (
-          <div className="bg-white rounded-2xl shadow p-6 space-y-5">
-            <h3 className="font-bold text-slate-800 text-lg">Tambah Soal Baru</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Mata Pelajaran</label>
-                <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                  {MAPEL_LIST.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Jenis Asesmen</label>
-                <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                  {ASESMEN_LIST.map(a => <option key={a}>{a}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Jenis Soal</label>
-                {/* Ganti jenis → reset opsi ke jumlah default */}
-                <select value={jenisSoal} onChange={e => handleGantiJenis(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                  {JENIS_SOAL.map(j => <option key={j}>{j}</option>)}
-                </select>
-                <p className="text-xs text-slate-400 mt-1">
-                  {jenisSoal === "Benar/Salah Kompleks" ? "↳ Otomatis 3 opsi" : "↳ Otomatis 4 opsi"}
-                </p>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Point/Nilai</label>
-                <input type="number" value={point} onChange={e => setPoint(e.target.value)} min={1}
-                  className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">
-                Pertanyaan {isMapelMath(mapel) && <span className="text-blue-500 ml-1">∑ Formula matematika aktif</span>}
-              </label>
-              <MathInput
-                value={soal}
-                onChange={e => setSoal(e.target.value)}
-                rows={4}
-                placeholder={isMapelMath(mapel) ? "Tulis soal... Contoh: Hitung $\\frac{3}{4} + \\frac{1}{2}$" : "Tulis soal di sini..."}
-                showToolbar={isMapelMath(mapel)}
-              />
-            </div>
-
-            {/* URL Gambar */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">URL Gambar (opsional)</label>
-              <div className="flex gap-2">
-                <input type="url" value={gambar} onChange={e => { setGambar(e.target.value); setShowPreview(false); }}
-                  placeholder="https://drive.google.com/file/d/... atau URL gambar"
-                  className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-                {gambar && (
-                  <button onClick={() => setShowPreview(v => !v)}
-                    className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs font-bold px-3 rounded-xl whitespace-nowrap transition-colors">
-                    {showPreview ? "Tutup" : "👁 Preview"}
-                  </button>
-                )}
-              </div>
-              {showPreview && gambar && (
-                <div className="mt-2 overflow-hidden rounded-xl">
-                  <GambarSoal url={gambar} alt="Preview soal" />
-                </div>
-              )}
-            </div>
-
-            {/* Opsi Jawaban */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <label className="text-xs font-semibold text-slate-600">Opsi Jawaban</label>
-                  <p className="text-xs text-blue-500 font-medium mt-0.5">
-                    💡 Tip: Ctrl+V pada kotak opsi untuk paste banyak opsi sekaligus (tiap baris = 1 opsi)
-                  </p>
-                </div>
-                <button onClick={handleAddOpsi} className="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-200 font-medium flex-shrink-0">
-                  + Tambah Opsi
-                </button>
-              </div>
-              <div className="space-y-2">
-                {opsi.map((o, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-2">
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <div className="flex-1">
-                      <MathInput
-                        value={o}
-                        onChange={e => handleOpsiChange(i, e.target.value)}
-                        onPaste={e => handleOpsiPaste(e, i)}
-                        rows={1}
-                        placeholder={`Opsi ${String.fromCharCode(65 + i)}${isMapelMath(mapel) ? " — bisa pakai $formula$" : " — paste teks vertikal di sini"}`}
-                        showToolbar={false}
-                      />
-                      {/* Preview formula opsi jika ada $ */}
-                      {isMapelMath(mapel) && o && o.includes("$") && (
-                        <div className="mt-0.5 px-2 py-1 bg-slate-50 rounded-lg text-xs text-slate-600">
-                          <MathText text={o} />
-                        </div>
-                      )}
-                    </div>
-                    {jenisSoal === "Pilihan Ganda" && (
-                      <input type="radio" name="pg" checked={jawabanBenar[0]===o} onChange={() => handleJawabanPG(o)} className="w-4 h-4 mt-2.5" title="Jawaban benar" />
-                    )}
-                    {jenisSoal === "Pilihan Ganda Kompleks" && (
-                      <input type="checkbox" checked={jawabanBenar.includes(o)} onChange={() => handleJawabanPGK(o)} className="w-4 h-4 mt-2.5" title="Jawaban benar" />
-                    )}
-                    {jenisSoal === "Benar/Salah Kompleks" && (
-                      <div className="flex gap-1 flex-shrink-0 mt-1.5">
-                        <button onClick={() => handleJawabanBS(i, "Benar")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Benar" ? "bg-green-500 text-white" : "bg-slate-100 text-slate-600"}`}>B</button>
-                        <button onClick={() => handleJawabanBS(i, "Salah")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Salah" ? "bg-red-500 text-white" : "bg-slate-100 text-slate-600"}`}>S</button>
-                      </div>
-                    )}
-                    {opsi.length > 2 && (
-                      <button onClick={() => handleRemoveOpsi(i)} className="text-red-400 hover:text-red-600 text-xl leading-none mt-1.5">×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-slate-400 mt-2">
-                {jenisSoal==="Pilihan Ganda" && "○ Klik lingkaran untuk 1 jawaban benar"}
-                {jenisSoal==="Pilihan Ganda Kompleks" && "☑ Centang untuk ≥2 jawaban benar — skor parsial per opsi"}
-                {jenisSoal==="Benar/Salah Kompleks" && "Klik B/S tiap pernyataan — skor parsial per pernyataan"}
-              </p>
-            </div>
-
-            <button onClick={handleSubmitSoal} disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm">
-              {loading ? "Menyimpan..." : "💾 Simpan Soal ke Spreadsheet"}
-            </button>
-          </div>
-        )}
-
-        {/* ── TAB TOKEN ── */}
-        {activeTab === "token" && (
-          <div className="bg-white rounded-2xl shadow p-6 space-y-5">
-            <h3 className="font-bold text-slate-800 text-lg">Kelola Token Ujian</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-700">
-              <p className="font-semibold mb-1">ℹ️ Cara Kerja Token</p>
-              <p>Token digunakan siswa untuk membuka ujian. Buat token berbeda tiap mapel & asesmen.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Mata Pelajaran</label>
-                <select value={tokenMapel} onChange={e => setTokenMapel(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                  {MAPEL_LIST.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Asesmen</label>
-                <select value={tokenAsesmen} onChange={e => setTokenAsesmen(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500">
-                  {ASESMEN_LIST.map(a => <option key={a}>{a}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Token</label>
-              <input value={tokenValue} onChange={e => setTokenValue(e.target.value.toUpperCase())} placeholder="Contoh: MTK2024"
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest font-mono" />
-            </div>
-            <button onClick={handleSaveToken} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-colors text-sm">
-              🔑 Simpan Token
-            </button>
-            <div className="border-t pt-4">
-              <p className="text-xs font-semibold text-slate-600 mb-2">Token Demo:</p>
-              <div className="bg-slate-100 rounded-xl p-3 font-mono text-sm text-slate-700 space-y-1">
-                <p>Matematika / Sumatif 1 → <strong className="text-blue-600">UJIAN2024</strong></p>
-                <p>IPAS / Sumatif 1 → <strong className="text-blue-600">UJIAN2024</strong></p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB PENGATURAN ── */}
-        {activeTab === "pengaturan" && (
-          <div className="bg-white rounded-2xl shadow p-6 space-y-5">
-            <h3 className="font-bold text-slate-800 text-lg">Pengaturan Aplikasi</h3>
-
-            {/* Logo */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">URL Logo Sekolah</label>
-              <input value={logoInput} onChange={e => setLogoInput(e.target.value)}
-                placeholder="https://drive.google.com/file/d/... atau URL gambar"
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-              <p className="text-xs text-slate-400 mt-1">💡 Drive: Upload → Bagikan → "Siapa saja yang memiliki link" → Salin link</p>
-              {logoInput && (
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg p-2" style={{ minWidth:"64px" }}>
-                    <LogoSekolah url={logoInput} className="max-h-14 max-w-16 object-contain" />
-                  </div>
-                  <div className="text-xs text-slate-500 space-y-1">
-                    <p className="font-semibold text-slate-700">Preview Logo</p>
-                    {isDriveUrl(logoInput) ? (
-                      extractDriveFileId(logoInput)
-                        ? <p className="text-green-600">✓ File ID terdeteksi</p>
-                        : <p className="text-red-500">✗ Format URL Drive tidak dikenali</p>
-                    ) : <p className="text-blue-600">✓ URL gambar biasa</p>}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Nama Sekolah */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Nama Sekolah</label>
-              <input value={namaInput} onChange={e => setNamaInput(e.target.value)} placeholder="SD Negeri ..."
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-            </div>
-
-            {/* Nama Guru ← BARU */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Nama Guru</label>
-              <input value={namaGuruInput} onChange={e => setNamaGuruInput(e.target.value)} placeholder="Nama lengkap guru..."
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-              <p className="text-xs text-slate-400 mt-1">Muncul di kolom tanda tangan PDF hasil ujian.</p>
-            </div>
-
-            {/* NIP & Kota TTD — dalam satu baris */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">NIP Guru</label>
-                <input value={nipGuruInput} onChange={e => setNipGuruInput(e.target.value)} placeholder="198XXXXXXXX"
-                  className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Kota Penandatangan</label>
-                <input value={kotaTTDInput} onChange={e => setKotaTTDInput(e.target.value)} placeholder="Sumenep"
-                  className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500" />
-              </div>
-            </div>
-            <p className="text-xs text-slate-400 -mt-3">NIP & Kota muncul di kolom tanda tangan PDF: "Sumenep, 29 Maret 2026 / NIP. 198..."</p>
-
-            {/* Durasi */}
-            <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="text-2xl">⏱️</span>
-                <div>
-                  <h4 className="font-bold text-amber-900 text-sm">Durasi Waktu Ujian</h4>
-                  <p className="text-xs text-amber-700 mt-0.5">Timer otomatis mengumpulkan jawaban saat waktu habis</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <input type="number" value={durasiInput} onChange={e => setDurasiInput(e.target.value)} min={1} max={300}
-                  className="w-24 border-2 border-amber-300 focus:border-amber-500 rounded-xl px-3 py-3 text-center font-extrabold text-2xl text-amber-800 focus:outline-none bg-white" />
-                <div>
-                  <p className="text-sm font-bold text-amber-800">menit</p>
-                  <p className="text-xs text-amber-600 mt-0.5">= {durasiDisplay}</p>
-                </div>
-              </div>
-              <input type="range" min={10} max={180} step={5} value={durasiInput}
-                onChange={e => setDurasiInput(Number(e.target.value))} className="w-full accent-amber-500" />
-              <div className="flex flex-wrap gap-2">
-                {[{label:"30 mnt",val:30},{label:"45 mnt",val:45},{label:"1 jam",val:60},{label:"1,5 jam",val:90},{label:"2 jam",val:120}].map(({ label, val }) => (
-                  <button key={val} onClick={() => setDurasiInput(val)}
-                    className={`text-xs px-4 py-2 rounded-xl font-bold transition-all ${Number(durasiInput)===val ? "bg-amber-500 text-white shadow-md" : "bg-white text-amber-700 border border-amber-300 hover:bg-amber-100"}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Apps Script URL */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">URL Google Apps Script</label>
-              <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
-                placeholder="https://script.google.com/macros/s/.../exec"
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono text-xs" />
-              <p className="text-xs text-slate-400 mt-1">URL deployment Apps Script Web App.</p>
-            </div>
-
-            {/* Link Spreadsheet ← BARU */}
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Link Google Spreadsheet</label>
-              <input value={spreadsheetUrl} onChange={e => setSpreadsheetUrl(e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono text-xs" />
-              <p className="text-xs text-slate-400 mt-1">Link spreadsheet untuk melihat data soal & hasil ujian.</p>
-              {/* Tombol buka spreadsheet — hanya muncul setelah disimpan */}
-              {savedSpreadsheetUrl && (
-                <a href={savedSpreadsheetUrl} target="_blank" rel="noreferrer"
-                  className="mt-2 inline-flex items-center gap-2 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-bold px-4 py-2 rounded-xl transition-colors">
-                  <span>📊</span> Buka Google Spreadsheet ↗
-                </a>
-              )}
-            </div>
-
-            <button onClick={handleSavePengaturan}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors text-sm">
-              💾 Simpan Pengaturan
-            </button>
-
-            {/* Tampilkan tombol setelah simpan */}
-            {savedSpreadsheetUrl && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
-                <p className="text-xs text-green-700 font-medium">✅ Spreadsheet terhubung</p>
-                <a href={savedSpreadsheetUrl} target="_blank" rel="noreferrer"
-                  className="bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors">
-                  Buka ↗
-                </a>
-              </div>
-            )}
-
-            {/* Info: settings tersimpan di Spreadsheet, otomatis sinkron antar perangkat */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-              <p className="text-xs font-bold text-blue-800">🔄 Cara Kerja Sinkron Otomatis</p>
-              <ol className="text-xs text-blue-700 leading-relaxed list-decimal list-inside space-y-1">
-                <li>Isi URL Apps Script di atas → klik <strong>Simpan Pengaturan</strong></li>
-                <li>Pengaturan tersimpan ke sheet <strong>PENGATURAN</strong> di Spreadsheet</li>
-                <li>Buka aplikasi di HP/browser lain → logo & nama sekolah otomatis muncul</li>
-              </ol>
-              <div className="bg-blue-100 rounded-lg px-3 py-2 mt-1">
-                <p className="text-xs font-bold text-blue-900 mb-1">⚡ Agar sinkron tanpa perlu isi URL dulu:</p>
-                <p className="text-xs text-blue-800 leading-relaxed">
-                  Di file <code className="bg-white px-1 rounded">src/App.jsx</code> baris pertama, ganti:
-                </p>
-                <code className="block text-xs bg-white rounded px-2 py-1 mt-1 text-slate-700 break-all">
-                  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/<strong>ISI_ID_KAMU</strong>/exec";
-                </code>
-                <p className="text-xs text-blue-700 mt-1">Lalu <code className="bg-white px-1 rounded">npm run deploy</code> ulang. Setelah itu semua perangkat langsung sinkron tanpa perlu isi apapun.</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── TAB PANDUAN ── */}
-        {activeTab === "panduan" && (
-          <div className="bg-white rounded-2xl shadow p-6 space-y-4 text-sm text-slate-700">
-            <h3 className="font-bold text-slate-800 text-lg">📖 Panduan Penggunaan</h3>
-
-            {/* Panduan Input Soal */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="font-semibold text-blue-800 mb-3">📝 Cara Input Soal</p>
-              <ol className="list-decimal list-inside space-y-2 text-blue-700 text-xs leading-relaxed">
-                <li>Pilih <strong>Mata Pelajaran</strong> dan <strong>Asesmen</strong> yang sesuai</li>
-                <li>Pilih <strong>Jenis Soal</strong>:
-                  <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
-                    <li><strong>Pilihan Ganda (PG)</strong> → otomatis muncul 4 opsi, pilih 1 jawaban benar dengan radio button ○</li>
-                    <li><strong>Pilihan Ganda Kompleks (PGK)</strong> → otomatis muncul 4 opsi, centang ≥2 jawaban benar ☑</li>
-                    <li><strong>Benar/Salah Kompleks</strong> → otomatis muncul 3 opsi, klik B/S untuk tiap pernyataan</li>
-                  </ul>
-                </li>
-                <li>Isi <strong>Point/Nilai</strong> untuk bobot soal tersebut</li>
-                <li>Ketik pertanyaan di kotak <strong>Pertanyaan</strong></li>
-                <li>Isi opsi jawaban. Bisa klik <strong>+ Tambah Opsi</strong> jika perlu lebih banyak</li>
-                <li>
-                  <strong>Auto-Paste Vertikal</strong>: Salin teks opsi dari Word/PDF yang berjejer ke bawah, lalu tekan <kbd className="bg-blue-100 px-1.5 py-0.5 rounded font-mono">Ctrl+V</kbd> di kotak Opsi A — semua baris otomatis tersebar ke opsi berikutnya!
-                </li>
-                <li>Tandai jawaban yang benar, lalu klik <strong>💾 Simpan Soal</strong></li>
-              </ol>
-            </div>
-
-            {/* Panduan PDF */}
-            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
-              <p className="font-semibold text-indigo-800 mb-2">📄 Fitur Download PDF Hasil</p>
-              <ul className="list-disc list-inside space-y-1 text-indigo-700 text-xs leading-relaxed">
-                <li>Setelah siswa menyelesaikan ujian, halaman hasil menampilkan nilai & rincian poin</li>
-                <li>Klik tombol <strong>📥 Download PDF</strong> untuk mencetak laporan</li>
-                <li>PDF berisi: identitas siswa, nilai akhir, rincian poin per soal, dan kolom tanda tangan guru</li>
-                <li>Nama guru di kolom TTD diambil dari pengaturan <strong>Nama Guru</strong></li>
-                <li>Atur nama guru di tab <strong>Pengaturan</strong> sebelum ujian dimulai</li>
-              </ul>
-            </div>
-
-            {/* Penilaian parsial */}
-            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-              <p className="font-semibold text-purple-800 mb-2">🧮 Sistem Penilaian Parsial</p>
-              <div className="text-xs text-purple-700 space-y-2 leading-relaxed">
-                <div className="bg-purple-100 rounded-lg p-2">
-                  <p className="font-bold">PG (Pilihan Ganda):</p>
-                  <p>Benar semua = poin penuh | Salah = 0 poin</p>
-                </div>
-                <div className="bg-purple-100 rounded-lg p-2">
-                  <p className="font-bold">PGK (Pilihan Ganda Kompleks):</p>
-                  <p>Tiap opsi dihitung. Opsi benar yang dipilih ✅ dan opsi salah yang tidak dipilih ✅ = poin.</p>
-                  <p className="font-mono mt-1">Skor = (opsi tepat / total opsi) × point soal</p>
-                </div>
-                <div className="bg-purple-100 rounded-lg p-2">
-                  <p className="font-bold">B/S Kompleks (Benar/Salah):</p>
-                  <p>Tiap pernyataan dihitung secara terpisah.</p>
-                  <p className="font-mono mt-1">Skor = (pernyataan benar / total pernyataan) × point soal</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Info */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-700 space-y-1">
+        <p className="font-bold text-blue-800">💡 Cara Kerja Aplikasi</p>
+        <p>1. Tambahkan siswa di menu <strong>Data Siswa</strong></p>
+        <p>2. Input soal di menu <strong>Input Soal</strong></p>
+        <p>3. Buat token ujian di <strong>Manajemen Mapel</strong></p>
+        <p>4. Siswa login dengan NISN + Token</p>
+        <p>5. Koreksi esai & lihat nilai di <strong>Rekap Hasil</strong></p>
       </div>
     </div>
   );
 }
 
 // ============================================================
-// HALAMAN SISWA
+// DATA SISWA (import/export XLSX)
 // ============================================================
-function HalamanSiswa({ onMulaiUjian, onGuruMode }) {
-  const [nama, setNama] = useState("");
+function TabSiswa({ scriptUrl, addToast }) {
+  const [daftarSiswa, setDaftarSiswa] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [nisn, setNisn] = useState("");
-  const [noAbsen, setNoAbsen] = useState("");
-  const [mapel, setMapel] = useState(MAPEL_LIST[0]);
-  const [asesmen, setAsesmen] = useState(ASESMEN_LIST[0]);
+  const [nama, setNama] = useState("");
+  const [kelas, setKelas] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
+  const fetchSiswa = async () => {
+    const url = scriptUrl || APPS_SCRIPT_URL;
+    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
+    setLoading(true);
+    try { const r = await fetch(`${url}?action=getSiswa`); const d = await r.json(); if (d.status==="success") setDaftarSiswa(d.data || []); } catch {} finally { setLoading(false); }
+  };
+  useEffect(() => { fetchSiswa(); }, []);
+  const handleTambah = async () => {
+    if (!nisn.trim() || !nama.trim() || !kelas.trim()) return addToast("Semua field harus diisi!", "error");
+    setSaving(true);
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahSiswa", nisn:nisn.trim(), nama:nama.trim(), kelas:kelas.trim() }) });
+      const d = await r.json();
+      if (d.status==="success") { addToast("Siswa berhasil ditambahkan!", "success"); setNisn(""); setNama(""); setKelas(""); setShowForm(false); fetchSiswa(); }
+      else addToast(d.message || "Gagal", "error");
+    } catch { addToast("Tidak terhubung ke server", "warning"); } finally { setSaving(false); }
+  };
+  const handleHapus = async (nisnTarget) => {
+    if (!window.confirm(`Hapus siswa NISN ${nisnTarget}?`)) return;
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusSiswa", nisn:nisnTarget }) });
+      addToast("Siswa dihapus!", "success"); fetchSiswa();
+    } catch { addToast("Gagal menghapus siswa", "error"); }
+  };
+  const handleDownloadTemplate = async () => {
+    try {
+      if (!window.XLSX) await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      const wb = window.XLSX.utils.book_new();
+      const wsData = [["NISN", "Nama", "Kelas"], ["1234567890", "Contoh Nama Siswa", "5A"], ["0987654321", "Contoh Siswa Dua", "5B"]];
+      const ws = window.XLSX.utils.aoa_to_sheet(wsData);
+      ws["!cols"] = [{ wch: 15 }, { wch: 30 }, { wch: 10 }];
+      window.XLSX.utils.book_append_sheet(wb, ws, "Data Siswa");
+      window.XLSX.writeFile(wb, "template_import_siswa.xlsx");
+      addToast("✅ Template XLSX berhasil diunduh!", "success");
+    } catch (err) { addToast("Gagal membuat template: " + err.message, "error"); }
+  };
+  const handleFileImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImporting(true);
+    addToast("Membaca file...", "info");
+    try {
+      if (!window.XLSX) await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      const buffer = await file.arrayBuffer();
+      const workbook = window.XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      if (rows.length < 2) return addToast("File kosong atau tidak ada data siswa.", "error");
+      const header = rows[0].map(h => String(h).toLowerCase().trim());
+      const nisnCol = header.findIndex(h => h.includes("nisn"));
+      const namaCol = header.findIndex(h => h.includes("nama"));
+      const kelasCol = header.findIndex(h => h.includes("kelas"));
+      if (nisnCol < 0 || namaCol < 0) return addToast("Kolom NISN atau Nama tidak ditemukan.", "error");
+      const siswaList = [];
+      for (let i=1; i<rows.length; i++) {
+        const row = rows[i];
+        const nisnVal = String(row[nisnCol] || "").trim();
+        const namaVal = String(row[namaCol] || "").trim();
+        const kelasVal = kelasCol >= 0 ? String(row[kelasCol] || "").trim() : "";
+        if (nisnVal && namaVal) siswaList.push({ nisn: nisnVal, nama: namaVal, kelas: kelasVal });
+      }
+      if (siswaList.length === 0) return addToast("Tidak ada data valid dalam file.", "error");
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      if (url.includes("YOUR_APPS_SCRIPT_ID")) { addToast(`Demo: Ditemukan ${siswaList.length} siswa. Hubungkan ke Apps Script untuk menyimpan.`, "warning"); setImporting(false); return; }
+      let sukses = 0, gagal = 0;
+      for (const s of siswaList) {
+        try { const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahSiswa", ...s }) }); const d = await r.json(); if (d.status === "success") sukses++; else gagal++; } catch { gagal++; }
+      }
+      addToast(`✅ Import selesai: ${sukses} berhasil, ${gagal} gagal (duplikasi NISN dilewati).`, sukses > 0 ? "success" : "error");
+      fetchSiswa();
+    } catch (err) { addToast("Gagal membaca file: " + err.message, "error"); } finally { setImporting(false); }
+  };
+  const filtered = daftarSiswa.filter(s => s.nama?.toLowerCase().includes(search.toLowerCase()) || s.nisn?.includes(search) || s.kelas?.includes(search));
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h2 className="text-xl font-extrabold text-slate-800">Data Siswa</h2><p className="text-sm text-slate-500">{daftarSiswa.length} siswa terdaftar</p></div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleDownloadTemplate} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-xl text-sm">📥 Download Template</button>
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="bg-green-100 hover:bg-green-200 text-green-800 font-bold py-2 px-4 rounded-xl text-sm disabled:opacity-50">
+            {importing ? <><span className="w-4 h-4 border-2 border-green-400 border-t-green-700 rounded-full animate-spin inline-block" /> Mengimpor...</> : <>📤 Import XLSX/CSV</>}
+          </button>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileImport} />
+          <button onClick={() => setShowForm(v => !v)} className={btn(showForm ? "slate" : "blue")}>{showForm ? "✕ Batal" : "➕ Tambah Manual"}</button>
+        </div>
+      </div>
+      <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-700">
+        <p className="font-bold mb-1">📋 Cara Import Massal:</p>
+        <p>1. Klik <strong>Download Template</strong> → buka di Excel/Google Sheets</p>
+        <p>2. Isi data siswa (NISN, Nama, Kelas) sesuai kolom</p>
+        <p>3. Simpan sebagai <strong>.xlsx</strong> atau <strong>.csv</strong></p>
+        <p>4. Klik <strong>Import XLSX/CSV</strong> → pilih file → data otomatis masuk</p>
+      </div>
+      {showForm && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-4">
+          <h3 className="font-bold text-blue-800 text-sm">Tambah Siswa Manual</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="NISN"><input value={nisn} onChange={e=>setNisn(e.target.value)} placeholder="10 digit NISN" className={inp} maxLength={20} /></Field>
+            <Field label="Nama Lengkap"><input value={nama} onChange={e=>setNama(e.target.value)} placeholder="Nama lengkap siswa" className={inp} /></Field>
+            <Field label="Kelas"><input value={kelas} onChange={e=>setKelas(e.target.value)} placeholder="Contoh: 5A, 6B" className={inp} /></Field>
+          </div>
+          <button onClick={handleTambah} disabled={saving} className={btn("green") + " w-full"}>{saving ? "Menyimpan..." : "💾 Simpan Siswa"}</button>
+        </div>
+      )}
+      <div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari siswa (nama/NISN/kelas)..." className={inp + " mb-3"} />
+        {loading ? <div className="text-center py-8 text-slate-400">Memuat data siswa...</div>
+        : filtered.length === 0 ? <div className="text-center py-8 text-slate-400">{daftarSiswa.length === 0 ? "Belum ada siswa. Tambah manual atau import dari Excel." : "Tidak ada siswa yang cocok."}</div>
+        : <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-slate-800 text-white"><th className="px-4 py-3 text-left">NISN</th><th className="px-4 py-3 text-left">Nama</th><th className="px-4 py-3 text-left">Kelas</th><th className="px-4 py-3 text-center">Aksi</th></tr></thead>
+              <tbody>{filtered.map((s, i) => (
+                <tr key={s.nisn} className={i%2===0?"bg-white":"bg-slate-50"}>
+                  <td className="px-4 py-3 font-mono text-xs">{s.nisn}</td><td className="px-4 py-3 font-medium">{s.nama}</td><td className="px-4 py-3">{s.kelas}</td>
+                  <td className="px-4 py-3 text-center"><button onClick={() => handleHapus(s.nisn)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded-lg hover:bg-red-50">Hapus</button></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// MANAJEMEN MAPEL & ASESMEN (dengan toggle switch token, edit token)
+// ============================================================
+function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, setAsesmenList }) {
+  const [newMapel, setNewMapel] = useState("");
+  const [newAsesmen, setNewAsesmen] = useState("");
+  const [tokenMapel, setTokenMapel] = useState(mapelList[0] || "");
+  const [tokenAsesmen, setTokenAsesmen] = useState(asesmenList[0] || "");
+  const [tokenValue, setTokenValue] = useState("");
+  const [daftarToken, setDaftarToken] = useState([]);
+  const [loadToken, setLoadToken] = useState(false);
+  const [kkmData, setKkmData] = useState({});
+  const [kkmLoading, setKkmLoading] = useState(false);
+  const [kkmSaving, setKkmSaving] = useState(false);
+  // Modal edit token
+  const [editModal, setEditModal] = useState(null); // { mapel, asesmen, token }
+  const [editTokenValue, setEditTokenValue] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const loadKKM = async () => {
+    setKkmLoading(true);
+    const data = await fetchKKM(scriptUrl);
+    setKkmData(data);
+    setKkmLoading(false);
+  };
+  useEffect(() => { loadKKM(); }, []);
+
+  const handleKKMChange = (mapel, value) => {
+    setKkmData(prev => ({ ...prev, [mapel]: value === "" ? "" : Number(value) }));
+  };
+  const handleSaveKKM = async () => {
+    setKkmSaving(true);
+    const success = await simpanKKM(scriptUrl, kkmData);
+    if (success) addToast("KKM berhasil disimpan!", "success");
+    else addToast("Gagal menyimpan KKM", "error");
+    setKkmSaving(false);
+  };
+
+  const handleTambahMapel = async () => {
+    const m = newMapel.trim();
+    if (!m) return addToast("Nama mapel tidak boleh kosong!", "error");
+    if (mapelList.includes(m)) return addToast("Mapel sudah ada!", "warning");
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahMapelKustom", nama:m }) });
+      const d = await res.json();
+      if (d.status === "success") {
+        addToast(`Mapel "${m}" ditambahkan!`, "success");
+        setNewMapel("");
+        const newMapels = await fetchMapelList(scriptUrl);
+        setMapelList(newMapels);
+        loadKKM();
+      } else addToast(d.message, "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+  };
+  const handleHapusMapel = async (m) => {
+    if (DEFAULT_MAPEL.includes(m)) return addToast("Mapel bawaan tidak bisa dihapus.", "warning");
+    if (!window.confirm(`Hapus mapel "${m}"?`)) return;
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusMapelKustom", nama:m }) });
+      const d = await res.json();
+      if (d.status === "success") {
+        addToast(`Mapel "${m}" dihapus.`, "success");
+        const newMapels = await fetchMapelList(scriptUrl);
+        setMapelList(newMapels);
+        loadKKM();
+      } else addToast(d.message, "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+  };
+  const handleTambahAsesmen = async () => {
+    const a = newAsesmen.trim();
+    if (!a) return addToast("Nama asesmen tidak boleh kosong!", "error");
+    if (asesmenList.includes(a)) return addToast("Asesmen sudah ada!", "warning");
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahAsesmenKustom", nama:a }) });
+      const d = await res.json();
+      if (d.status === "success") {
+        addToast(`Asesmen "${a}" ditambahkan!`, "success");
+        setNewAsesmen("");
+        const newAsesmens = await fetchAsesmenList(scriptUrl);
+        setAsesmenList(newAsesmens);
+      } else addToast(d.message, "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+  };
+  const handleHapusAsesmen = async (a) => {
+    if (DEFAULT_ASESMEN.includes(a)) return addToast("Asesmen bawaan tidak bisa dihapus.", "warning");
+    if (!window.confirm(`Hapus asesmen "${a}"?`)) return;
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusAsesmenKustom", nama:a }) });
+      const d = await res.json();
+      if (d.status === "success") {
+        addToast(`Asesmen "${a}" dihapus.`, "success");
+        const newAsesmens = await fetchAsesmenList(scriptUrl);
+        setAsesmenList(newAsesmens);
+      } else addToast(d.message, "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+  };
+
+  const fetchToken = async () => {
+    const url = scriptUrl || APPS_SCRIPT_URL;
+    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
+    setLoadToken(true);
+    try { const r = await fetch(`${url}?action=getDaftarToken`); const d = await r.json(); if (d.status==="success") setDaftarToken(d.data || []); } catch {} finally { setLoadToken(false); }
+  };
+  useEffect(() => { fetchToken(); }, []);
+
+  const handleSimpanToken = async () => {
+    if (!tokenValue.trim()) return addToast("Isi token terlebih dahulu!", "error");
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanToken", mapel:tokenMapel, asesmen:tokenAsesmen, token:tokenValue.toUpperCase() }) });
+      const d = await r.json();
+      if (d.status==="success") { addToast(`Token "${tokenValue.toUpperCase()}" disimpan!`, "success"); setTokenValue(""); fetchToken(); }
+      else addToast(d.message, "error");
+    } catch { addToast(`Demo: Token "${tokenValue}" (belum terhubung)`, "warning"); }
+  };
+
+  // Update status token (aktif/nonaktif)
+  const handleToggleStatus = async (mapel, asesmen, token, currentStatus) => {
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const newStatus = currentStatus === "TRUE" ? "FALSE" : "TRUE";
+      const response = await fetch(url, {
+        method: "POST",
+        body: JSON.stringify({ action: "updateTokenStatus", mapel, asesmen, status: newStatus })
+      });
+      const result = await response.json();
+      if (result.status === "success") {
+        addToast(`Token ${newStatus === "TRUE" ? "diaktifkan" : "dinonaktifkan"}!`, "success");
+        fetchToken();
+      } else {
+        addToast(result.message || "Gagal mengubah status token", "error");
+      }
+    } catch (error) {
+      console.error(error);
+      addToast("Gagal mengubah status token", "error");
+    }
+  };
+
+  // Edit token
+  const openEditModal = (t) => {
+    setEditModal({ mapel: t.mapel, asesmen: t.asesmen, token: t.token });
+    setEditTokenValue(t.token);
+  };
+  const closeEditModal = () => {
+    setEditModal(null);
+    setEditTokenValue("");
+  };
+  const handleEditToken = async () => {
+    if (!editTokenValue.trim()) return addToast("Token tidak boleh kosong!", "error");
+    setEditSaving(true);
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const res = await fetch(url, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "simpanToken",
+          mapel: editModal.mapel,
+          asesmen: editModal.asesmen,
+          token: editTokenValue.toUpperCase()
+        })
+      });
+      const d = await res.json();
+      if (d.status === "success") {
+        addToast("Token berhasil diubah!", "success");
+        fetchToken();
+        closeEditModal();
+      } else {
+        addToast(d.message || "Gagal mengubah token", "error");
+      }
+    } catch (error) {
+      addToast("Gagal terhubung ke server", "error");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div><h2 className="text-xl font-extrabold text-slate-800">Manajemen Mapel & Token</h2><p className="text-sm text-slate-500">Kelola mata pelajaran, asesmen, token, dan KKM.</p></div>
+      <div className="grid md:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+          <h3 className="font-bold text-slate-700">📚 Mata Pelajaran</h3>
+          <div className="flex gap-2"><input value={newMapel} onChange={e=>setNewMapel(e.target.value)} placeholder="Tambah mapel baru..." className={inp + " flex-1"} onKeyDown={e=>e.key==="Enter" && handleTambahMapel()} /><button onClick={handleTambahMapel} className={btn("blue")}>+ Tambah</button></div>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {mapelList.map(m => (
+              <div key={m} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{m}</span>{!DEFAULT_MAPEL.includes(m) && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">Kustom</span>}</div>
+                {!DEFAULT_MAPEL.includes(m) && <button onClick={() => handleHapusMapel(m)} className="text-red-400 hover:text-red-600 text-xs font-medium">Hapus</button>}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400">Total: {mapelList.length} mapel ({mapelList.length - DEFAULT_MAPEL.length} kustom)</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+          <h3 className="font-bold text-slate-700">📋 Jenis Asesmen</h3>
+          <div className="flex gap-2"><input value={newAsesmen} onChange={e=>setNewAsesmen(e.target.value)} placeholder="Tambah asesmen baru..." className={inp + " flex-1"} onKeyDown={e=>e.key==="Enter" && handleTambahAsesmen()} /><button onClick={handleTambahAsesmen} className={btn("blue")}>+ Tambah</button></div>
+          <div className="space-y-1 max-h-60 overflow-y-auto">
+            {asesmenList.map(a => (
+              <div key={a} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{a}</span>{!DEFAULT_ASESMEN.includes(a) && <span className="text-xs bg-green-100 text-green-600 px-1.5 py-0.5 rounded font-medium">Kustom</span>}</div>
+                {!DEFAULT_ASESMEN.includes(a) && <button onClick={() => handleHapusAsesmen(a)} className="text-red-400 hover:text-red-600 text-xs font-medium">Hapus</button>}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400">Total: {asesmenList.length} asesmen ({asesmenList.length - DEFAULT_ASESMEN.length} kustom)</p>
+        </div>
+      </div>
+
+      {/* KKM Settings */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+        <h3 className="font-bold text-slate-700">🎯 Nilai Ketuntasan Minimal (KKM) per Mapel</h3>
+        {kkmLoading ? <p className="text-xs text-slate-400">Memuat KKM...</p> : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {mapelList.map(mapel => (
+              <div key={mapel} className="flex items-center gap-2">
+                <label className="text-xs font-medium text-slate-600 w-32 truncate">{mapel}</label>
+                <input type="number" min={0} max={100} value={kkmData[mapel] !== undefined ? kkmData[mapel] : ""} onChange={e => handleKKMChange(mapel, e.target.value)} placeholder="75" className="w-20 border-2 border-slate-200 rounded-lg px-2 py-1 text-sm text-center" />
+                <span className="text-xs text-slate-400">(default 75)</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={handleSaveKKM} disabled={kkmSaving} className={btn("green") + " w-full md:w-auto"}>{kkmSaving ? "Menyimpan..." : "💾 Simpan KKM"}</button>
+        <p className="text-xs text-slate-500">* KKM digunakan untuk menentukan "Tuntas" / "Belum Tuntas" di halaman Rekap Hasil.</p>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">✅ Mapel dan asesmen kustom otomatis tersedia di login, input soal, dan rekap hasil.</div>
+      
+      {/* Token Management */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+        <h3 className="font-bold text-slate-700">🔑 Token Ujian</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Field label="Mata Pelajaran"><select value={tokenMapel} onChange={e=>setTokenMapel(e.target.value)} className={inp}>{mapelList.map(m=><option key={m}>{m}</option>)}</select></Field>
+          <Field label="Asesmen"><select value={tokenAsesmen} onChange={e=>setTokenAsesmen(e.target.value)} className={inp}>{asesmenList.map(a=><option key={a}>{a}</option>)}</select></Field>
+          <Field label="Token"><input value={tokenValue} onChange={e=>setTokenValue(e.target.value.toUpperCase())} placeholder="Contoh: MTK2024" className={inp + " uppercase tracking-widest font-mono font-bold"} /></Field>
+        </div>
+        <button onClick={handleSimpanToken} className={btn("green") + " w-full md:w-auto"}>🔑 Simpan Token</button>
+        
+        <div>
+          <div className="flex items-center justify-between mb-2"><p className="text-xs font-bold text-slate-600">Daftar Token Aktif</p><button onClick={fetchToken} className="text-xs text-blue-500 hover:underline">🔄 Refresh</button></div>
+          {loadToken ? <p className="text-xs text-slate-400">Memuat...</p> : daftarToken.length === 0 ? <p className="text-xs text-slate-400">Belum ada token</p> : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-slate-100"><th className="px-3 py-2 text-left">Mapel</th><th className="px-3 py-2 text-left">Asesmen</th><th className="px-3 py-2 text-left">Token</th><th className="px-3 py-2 text-center">Status</th><th className="px-3 py-2 text-center">Aksi</th></tr></thead>
+                <tbody>{daftarToken.map((t, i) => (
+                  <tr key={i} className={i%2===0?"bg-white":"bg-slate-50"}>
+                    <td className="px-3 py-2">{t.mapel}</td>
+                    <td className="px-3 py-2">{t.asesmen}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-blue-600">{t.token}</td>
+                    <td className="px-3 py-2 text-center">
+                      <button onClick={() => handleToggleStatus(t.mapel, t.asesmen, t.token, t.aktif)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${t.aktif === "TRUE" ? "bg-green-500" : "bg-gray-300"}`}>
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${t.aktif === "TRUE" ? "translate-x-6" : "translate-x-1"}`} />
+                      </button>
+                      <span className="ml-2 text-xs font-medium">{t.aktif === "TRUE" ? "Aktif" : "Nonaktif"}</span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <button onClick={() => openEditModal(t)} className="text-blue-500 hover:text-blue-700 text-xs font-medium px-2 py-1 rounded">✏️ Edit</button>
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal Edit Token */}
+      {editModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e=>{ if(e.target===e.currentTarget) closeEditModal(); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-extrabold text-slate-800 mb-4">✏️ Edit Token</h3>
+            <div className="space-y-4">
+              <Field label="Mata Pelajaran"><input value={editModal.mapel} disabled className={inp + " bg-slate-100"} /></Field>
+              <Field label="Asesmen"><input value={editModal.asesmen} disabled className={inp + " bg-slate-100"} /></Field>
+              <Field label="Token Baru">
+                <input value={editTokenValue} onChange={e=>setEditTokenValue(e.target.value.toUpperCase())} placeholder="Token baru" className={inp + " uppercase tracking-widest font-mono font-bold"} />
+              </Field>
+              <div className="flex gap-3 pt-2">
+                <button onClick={closeEditModal} className={btn("slate") + " flex-1"}>Batal</button>
+                <button onClick={handleEditToken} disabled={editSaving} className={btn("blue") + " flex-1"}>{editSaving ? "Menyimpan..." : "Simpan"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// INPUT SOAL (sama seperti sebelumnya)
+// ============================================================
+function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
+  mapelList = mapelList || DEFAULT_MAPEL;
+  asesmenList = asesmenList || DEFAULT_ASESMEN;
+  const [soal, setSoal] = useState("");
+  const [gambar, setGambar] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
+  const [point, setPoint] = useState(10);
+  const [mapel, setMapel] = useState(mapelList[0]);
+  const [asesmen, setAsesmen] = useState(asesmenList[0]);
+  const [jenisSoal, setJenisSoal] = useState("Pilihan Ganda");
+  const [opsi, setOpsi] = useState(["","","",""]);
+  const [jawabanBenar, setJawabanBenar] = useState([]);
+  const [jawabanReferensi, setJawabanReferensi] = useState("");
+  const [loading, setLoading] = useState(false);
+  
+  const handleGantiJenis = j => {
+    setJenisSoal(j);
+    if (j === "Benar/Salah Kompleks") setOpsi(["","",""]);
+    else if (j === "Uraian/Esai") setOpsi([]);
+    else setOpsi(["","","",""]);
+    setJawabanBenar([]);
+    setJawabanReferensi("");
+    // Reset point ke 10 jika bukan esai, ke 0 jika esai
+    if (j === "Uraian/Esai") setPoint(0);
+    else setPoint(10);
+  };
+  
+  const handleOpsiChange = (i, v) => { const a=[...opsi]; a[i]=v; setOpsi(a); };
+  const handleAddOpsi = () => setOpsi([...opsi,""]);
+  const handleRemoveOpsi = i => { setOpsi(opsi.filter((_,idx)=>idx!==i)); setJawabanBenar(jawabanBenar.filter(j=>j!==opsi[i])); };
+  const handleJawabanPG = v => setJawabanBenar([v]);
+  const handleJawabanPGK = v => setJawabanBenar(p=>p.includes(v)?p.filter(x=>x!==v):[...p,v]);
+  const handleJawabanBS = (idx, val) => { const arr=[...(jawabanBenar.length===opsi.length?jawabanBenar:opsi.map(()=>""))]; arr[idx]=val; setJawabanBenar(arr); };
+  
+  const handleOpsiPaste = (e, startIdx) => {
+    const text = e.clipboardData.getData("text");
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+    if (lines.length<=1) return;
+    e.preventDefault();
+    const newOpsi=[...opsi];
+    lines.forEach((line,i)=>{ const idx=startIdx+i; if(idx<newOpsi.length) newOpsi[idx]=line; else newOpsi.push(line); });
+    setOpsi(newOpsi);
+    addToast(`✅ ${lines.length} opsi di-paste sekaligus!`, "success");
+  };
+  
+  const handleSubmit = async () => {
+    if (!soal.trim()) return addToast("Soal tidak boleh kosong!", "error");
+    
+    // Validasi point hanya untuk soal non-esai
+    if (jenisSoal !== "Uraian/Esai") {
+      if (!point || isNaN(point) || point <= 0) return addToast("Point harus diisi dengan angka positif!", "error");
+    }
+    
+    if (jenisSoal !== "Uraian/Esai") {
+      if (opsi.filter(o=>o.trim()).length < 2) return addToast("Minimal 2 opsi!", "error");
+      if (jawabanBenar.length === 0) return addToast("Pilih jawaban benar!", "error");
+    }
+    
+    const payload = { 
+      action:"tambahSoal", 
+      mapel, asesmen, soal, gambar, jenisSoal, 
+      opsi: jenisSoal==="Uraian/Esai" ? "[]" : JSON.stringify(opsi.filter(o=>o.trim())), 
+      jawabanBenar: jenisSoal==="Uraian/Esai" ? "[]" : JSON.stringify(jawabanBenar), 
+      jawabanReferensi: jenisSoal==="Uraian/Esai" ? jawabanReferensi : "", 
+      point: jenisSoal==="Uraian/Esai" ? 0 : Number(point)  // point 0 untuk esai
+    };
+    
+    setLoading(true);
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const r = await fetch(url, { method:"POST", body:JSON.stringify(payload) });
+      const d = await r.json();
+      if (d.status==="success") { 
+        addToast("Soal berhasil disimpan! ✅","success"); 
+        setSoal(""); 
+        setGambar(""); 
+        setOpsi(["","","",""]); 
+        setJawabanBenar([]); 
+        setJawabanReferensi(""); 
+        setShowPreview(false);
+        if (jenisSoal !== "Uraian/Esai") setPoint(10);
+        else setPoint(0);
+      } else addToast(d.message||"Gagal menyimpan","error");
+    } catch { addToast("Mode Demo: Belum terhubung ke Apps Script","warning"); } 
+    finally { setLoading(false); }
+  };
+  
+  const isMath = isMapelMath(mapel);
+  
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-extrabold text-slate-800">Input Soal</h2>
+        <p className="text-sm text-slate-500">Tambahkan soal ke bank soal</p>
+      </div>
+      
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Mata Pelajaran">
+            <select value={mapel} onChange={e=>setMapel(e.target.value)} className={inp}>
+              {mapelList.map(m=><option key={m}>{m}</option>)}
+            </select>
+          </Field>
+          <Field label="Jenis Asesmen">
+            <select value={asesmen} onChange={e=>setAsesmen(e.target.value)} className={inp}>
+              {asesmenList.map(a=><option key={a}>{a}</option>)}
+            </select>
+          </Field>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Jenis Soal">
+            <select value={jenisSoal} onChange={e=>handleGantiJenis(e.target.value)} className={inp}>
+              {JENIS_SOAL_LENGKAP.map(j=><option key={j}>{j}</option>)}
+            </select>
+          </Field>
+          <Field label="Point/Nilai">
+            <input 
+              type="number" 
+              value={point} 
+              onChange={e => setPoint(Number(e.target.value))} 
+              min={jenisSoal === "Uraian/Esai" ? 0 : 1} 
+              className={inp} 
+              disabled={jenisSoal === "Uraian/Esai"}
+            />
+            {jenisSoal === "Uraian/Esai" && (
+              <p className="text-xs text-amber-600 mt-1">⚠️ Point tidak digunakan untuk soal uraian, nilai ditentukan guru saat koreksi.</p>
+            )}
+          </Field>
+        </div>
+        
+        <Field label={`Pertanyaan${isMath?" ∑ Formula aktif":""}`}>
+          <MathInput 
+            value={soal} 
+            onChange={e=>setSoal(e.target.value)} 
+            rows={4} 
+            placeholder={isMath?"Tulis soal... Gunakan $formula$ untuk math":"Tulis soal di sini..."} 
+            showToolbar={isMath} 
+          />
+        </Field>
+        
+        <Field label="URL Gambar (opsional)" hint="Google Drive atau URL langsung">
+          <div className="flex gap-2">
+            <input 
+              type="url" 
+              value={gambar} 
+              onChange={e=>{setGambar(e.target.value);setShowPreview(false);}} 
+              placeholder="https://drive.google.com/file/d/..." 
+              className={inp + " flex-1"} 
+            />
+            {gambar && <button onClick={()=>setShowPreview(v=>!v)} className={btn("slate")}>{showPreview?"Tutup":"👁 Preview"}</button>}
+          </div>
+          {showPreview && gambar && <div className="mt-2 overflow-hidden rounded-xl"><GambarSoal url={gambar} /></div>}
+        </Field>
+        
+        {/* Opsi Jawaban - hanya untuk soal non-esai */}
+        {jenisSoal !== "Uraian/Esai" && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-600">Opsi Jawaban</p>
+                <p className="text-xs text-blue-500">💡 Ctrl+V di Opsi A untuk paste banyak sekaligus</p>
+              </div>
+              <button onClick={handleAddOpsi} className="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-200 font-medium">+ Tambah Opsi</button>
+            </div>
+            <div className="space-y-2">
+              {opsi.map((o, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-2">
+                    {String.fromCharCode(65+i)}
+                  </span>
+                  <div className="flex-1">
+                    <MathInput 
+                      value={o} 
+                      onChange={e=>handleOpsiChange(i,e.target.value)} 
+                      onPaste={e=>handleOpsiPaste(e,i)} 
+                      rows={1} 
+                      placeholder={`Opsi ${String.fromCharCode(65+i)}`} 
+                      showToolbar={false} 
+                    />
+                    {isMath && o && o.includes("$") && 
+                      <div className="mt-0.5 px-2 py-1 bg-slate-50 rounded-lg text-xs"><MathText text={o} /></div>
+                    }
+                  </div>
+                  {jenisSoal === "Pilihan Ganda" && 
+                    <input type="radio" name="pg" checked={jawabanBenar[0]===o} onChange={()=>handleJawabanPG(o)} className="w-4 h-4 mt-2.5" />
+                  }
+                  {jenisSoal === "Pilihan Ganda Kompleks" && 
+                    <input type="checkbox" checked={jawabanBenar.includes(o)} onChange={()=>handleJawabanPGK(o)} className="w-4 h-4 mt-2.5" />
+                  }
+                  {jenisSoal === "Benar/Salah Kompleks" && (
+                    <div className="flex gap-1 flex-shrink-0 mt-1.5">
+                      <button onClick={()=>handleJawabanBS(i,"Benar")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Benar"?"bg-green-500 text-white":"bg-slate-100 text-slate-600"}`}>B</button>
+                      <button onClick={()=>handleJawabanBS(i,"Salah")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Salah"?"bg-red-500 text-white":"bg-slate-100 text-slate-600"}`}>S</button>
+                    </div>
+                  )}
+                  {opsi.length > 2 && 
+                    <button onClick={()=>handleRemoveOpsi(i)} className="text-red-400 hover:text-red-600 text-xl mt-1.5">×</button>
+                  }
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Jawaban referensi untuk esai */}
+        {jenisSoal === "Uraian/Esai" && (
+          <Field label="Kunci Jawaban Referensi (opsional)" hint="Membantu guru saat mengoreksi. Tidak ditampilkan ke siswa.">
+            <textarea 
+              value={jawabanReferensi} 
+              onChange={e=>setJawabanReferensi(e.target.value)} 
+              rows={3} 
+              placeholder="Tuliskan jawaban ideal/kata kunci sebagai referensi koreksi..." 
+              className={inp + " resize-none"} 
+            />
+          </Field>
+        )}
+        
+        <button onClick={handleSubmit} disabled={loading} className={btn("blue") + " w-full py-3 text-base"}>
+          {loading ? "Menyimpan..." : "💾 Simpan Soal ke Spreadsheet"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// REKAP HASIL UJIAN (dengan koreksi esai & bobot fleksibel)
+// ============================================================
+const mapelKodeMap = {
+  "Bahasa Indonesia":"BINDO","Pendidikan Pancasila":"PPKN","IPAS":"IPAS",
+  "Matematika":"MTK","Seni Rupa":"SENRUPA","Bahasa Madura":"BMADURA",
+  "Pendidikan Agama Islam":"PAI","PJOK":"PJOK",
+};
+function getMapelKode(mapel) { return mapelKodeMap[mapel] || mapel.replace(/\s+/g,"").substring(0,8).toUpperCase(); }
+
+function TabRekap({ scriptUrl, addToast, mapelList, asesmenList }) {
+  mapelList = mapelList || DEFAULT_MAPEL;
+  asesmenList = asesmenList || DEFAULT_ASESMEN;
+  const [hasil, setHasil] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filterMapel, setFilterMapel] = useState("Semua");
+  const [filterAsesmen, setFilterAsesmen] = useState("Semua");
+  const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [modalKoreksi, setModalKoreksi] = useState(null);
+  const [skorPerSoal, setSkorPerSoal] = useState({});
+  const [savingKoreksi, setSavingKoreksi] = useState(false);
+  const [kkmData, setKkmData] = useState({});
+  const [bobotObj, setBobotObj] = useState(80);
+  const [bobotEsai, setBobotEsai] = useState(20);
+  const [bobotLoading, setBobotLoading] = useState(false);
+  const [bobotSaving, setBobotSaving] = useState(false);
+
+  const loadKKM = async () => {
+    const data = await fetchKKM(scriptUrl);
+    setKkmData(data);
+  };
+ const loadBobot = async () => {
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
+  setBobotLoading(true);
+  try {
+    const res = await fetch(`${url}?action=getBobotNilai`);
+    const data = await res.json();
+    if (data.status === "success") {
+      const bobotObjVal = Number(data.data.bobot_objektif) || 80;
+      const bobotEsaiVal = Number(data.data.bobot_esai) || 20;
+      setBobotObj(bobotObjVal);
+      setBobotEsai(bobotEsaiVal);
+    }
+  } catch {} finally { setBobotLoading(false); }
+};
+
+const saveBobot = async () => {
+  setBobotSaving(true);
+  const url = scriptUrl || APPS_SCRIPT_URL;
+  if (url.includes("YOUR_APPS_SCRIPT_ID")) {
+    addToast("Demo: Bobot tersimpan lokal", "info");
+    setBobotSaving(false);
+    return;
+  }
+  try {
+    const res = await fetch(url, { 
+      method: "POST", 
+      body: JSON.stringify({ 
+        action: "simpanBobotNilai", 
+        bobot_objektif: bobotObj, 
+        bobot_esai: bobotEsai 
+      }) 
+    });
+    const d = await res.json();
+    if (d.status === "success") addToast("Bobot berhasil disimpan!", "success");
+    else addToast("Gagal menyimpan bobot", "error");
+  } catch { addToast("Gagal terhubung ke server", "error"); }
+  setBobotSaving(false);
+};
+
+  useEffect(() => { loadKKM(); loadBobot(); }, []);
+
+  const fetchHasil = async (targetMapel = "Semua") => {
+    const url = scriptUrl || APPS_SCRIPT_URL;
+    if (url.includes("YOUR_APPS_SCRIPT_ID")) { setHasil([]); return; }
+    setLoading(true);
+    try {
+      if (targetMapel === "Semua") {
+        const allData = [];
+        await Promise.all(mapelList.map(async (m) => {
+          const kode = getMapelKode(m);
+          try { const r = await fetch(`${url}?action=getHasilPerMapel&kode=${encodeURIComponent(kode)}`); const d = await r.json(); if (d.status === "success" && d.data?.length > 0) allData.push(...d.data); } catch {}
+        }));
+        setHasil(allData);
+      } else {
+        const kode = getMapelKode(targetMapel);
+        const r = await fetch(`${url}?action=getHasilPerMapel&kode=${encodeURIComponent(kode)}`);
+        const d = await r.json();
+        if (d.status === "success") setHasil(d.data || []);
+        else setHasil([]);
+      }
+    } catch {} finally { setLoading(false); }
+  };
+  useEffect(() => { fetchHasil(); }, []);
+
+  const handleFilterMapel = (m) => { setFilterMapel(m); fetchHasil(m); };
+
+  const filtered = hasil.filter(h => {
+    if (filterAsesmen !== "Semua" && h.asesmen !== filterAsesmen) return false;
+    if (search && !h.nama?.toLowerCase().includes(search.toLowerCase()) && !h.nisn?.includes(search)) return false;
+    return true;
+  });
+
+  const hitungNilaiAkhir = (h) => {
+    const obj = Number(h.skorObjektif || 0);
+    const esai = (h.skorEsai !== undefined && h.skorEsai !== "") ? Number(h.skorEsai) : null;
+    const adaEsai = h.adaEsai === "TRUE" || h.adaEsai === true || (h.jawabanEsai && h.jawabanEsai !== "" && h.jawabanEsai !== "[]");
+    if (!adaEsai) return obj;
+    if (esai !== null) return Math.round(obj * (bobotObj/100) + esai * (bobotEsai/100));
+    return obj;
+  };
+
+  const getKKMForMapel = (mapel) => {
+    const kkm = kkmData[mapel];
+    return kkm !== undefined && !isNaN(kkm) ? kkm : 75;
+  };
+
+  const handleExportXLSX = async () => {
+    if (filtered.length === 0) return addToast("Tidak ada data untuk diekspor.", "warning");
+    setExporting(true);
+    try {
+      if (!window.XLSX) await new Promise((res, rej) => { const s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      const wb = window.XLSX.utils.book_new();
+      const mapelGroups = {};
+      filtered.forEach(h => { const key = h.mapel || "Lainnya"; if (!mapelGroups[key]) mapelGroups[key] = []; mapelGroups[key].push(h); });
+      Object.entries(mapelGroups).forEach(([mapelNama, rows]) => {
+        const wsData = [["No","Waktu","NISN","Nama","Kelas","Asesmen","Skor Objektif","Skor Esai","Nilai Akhir","Keterangan"],
+          ...rows.map((h, i) => { const nilaiAkhir = hitungNilaiAkhir(h); const kkm = getKKMForMapel(h.mapel); const ket = nilaiAkhir >= kkm ? "Tuntas" : "Belum Tuntas"; return [i+1, h.waktu||"", h.nisn||"", h.nama||"", h.noAbsen||"", h.asesmen||"", Number(h.skorObjektif||0), h.skorEsai !== undefined && h.skorEsai !== "" ? Number(h.skorEsai) : "-", nilaiAkhir, ket]; }),
+          [], ["","","","","","Rata-rata","","", Math.round(rows.reduce((s, h) => s + hitungNilaiAkhir(h), 0) / rows.length)],
+          ["","","","","","Nilai Tertinggi","","", Math.max(...rows.map(h => hitungNilaiAkhir(h)))],
+          ["","","","","","Nilai Terendah","","", Math.min(...rows.map(h => hitungNilaiAkhir(h)))],
+          ["","","","","","Jumlah Tuntas (≥ KKM)","","", rows.filter(h => hitungNilaiAkhir(h) >= getKKMForMapel(h.mapel)).length],
+        ];
+        const ws = window.XLSX.utils.aoa_to_sheet(wsData);
+        ws["!cols"] = [{wch:5},{wch:18},{wch:14},{wch:25},{wch:10},{wch:16},{wch:14},{wch:10},{wch:12},{wch:14}];
+        const sheetName = getMapelKode(mapelNama).substring(0,31);
+        window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      });
+      const wsGabungan = window.XLSX.utils.aoa_to_sheet([["No","Waktu","NISN","Nama","Kelas","Mapel","Asesmen","Skor Objektif","Skor Esai","Nilai Akhir","Keterangan"],
+        ...filtered.map((h, i) => { const nilaiAkhir = hitungNilaiAkhir(h); const kkm = getKKMForMapel(h.mapel); const ket = nilaiAkhir >= kkm ? "Tuntas" : "Belum Tuntas"; return [i+1, h.waktu||"", h.nisn||"", h.nama||"", h.noAbsen||"", h.mapel||"", h.asesmen||"", Number(h.skorObjektif||0), h.skorEsai !== undefined && h.skorEsai !== "" ? Number(h.skorEsai) : "-", nilaiAkhir, ket]; })]);
+      wsGabungan["!cols"] = [{wch:5},{wch:18},{wch:14},{wch:25},{wch:10},{wch:20},{wch:16},{wch:14},{wch:10},{wch:12},{wch:14}];
+      window.XLSX.utils.book_append_sheet(wb, wsGabungan, "GABUNGAN");
+      const tgl = new Date().toISOString().slice(0,10);
+      window.XLSX.writeFile(wb, `Rekap_Hasil_Ujian_${tgl}.xlsx`);
+      addToast(`✅ Export berhasil! ${filtered.length} data diekspor ke XLSX.`, "success");
+    } catch (err) { addToast("Gagal export: " + err.message, "error"); } finally { setExporting(false); }
+  };
+
+  const handleSimpanKoreksi = async () => {
+    if (!modalKoreksi) return;
+    setSavingKoreksi(true);
+    try {
+      const url = scriptUrl || APPS_SCRIPT_URL;
+      const totalEsai = Object.values(skorPerSoal).reduce((a,b) => a + (Number(b) || 0), 0);
+      const jumlahEsai = Object.keys(skorPerSoal).length;
+      const rerataSkorEsai = jumlahEsai > 0 ? Math.round(totalEsai / jumlahEsai) : 0;
+      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanKoreksiEsai", nisn: modalKoreksi.nisn, mapel: modalKoreksi.mapel, asesmen: modalKoreksi.asesmen, waktu: modalKoreksi.waktu, skorEsai: rerataSkorEsai, detailSkorEsai: JSON.stringify(skorPerSoal) }) });
+      const d = await r.json();
+      if (d.status==="success") { addToast("Koreksi berhasil disimpan!", "success"); setModalKoreksi(null); setSkorPerSoal({}); fetchHasil(filterMapel); }
+      else addToast(d.message||"Gagal","error");
+    } catch { addToast("Gagal terhubung","error"); } finally { setSavingKoreksi(false); }
+  };
+
+  const asesmenTersedia = ["Semua", ...new Set(hasil.map(h=>h.asesmen).filter(Boolean))];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h2 className="text-xl font-extrabold text-slate-800">Rekap Hasil Ujian</h2><p className="text-sm text-slate-500">{filtered.length} data ditampilkan</p></div>
+        <div className="flex gap-2 flex-wrap"><button onClick={() => fetchHasil(filterMapel)} className={btn("slate")}>🔄 Refresh</button><button onClick={handleExportXLSX} disabled={exporting || filtered.length===0} className={btn("green") + " disabled:opacity-50"}>{exporting ? "Mengekspor..." : "📥 Export XLSX"}</button></div>
+      </div>
+
+      {/* Bobot Settings */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-end gap-4">
+        <div className="flex-1 min-w-[120px]">
+          <label className="text-xs font-semibold text-slate-600 block mb-1">Bobot Nilai Objektif (%)</label>
+          <input type="number" min={0} max={100} value={bobotObj} onChange={e => setBobotObj(Math.min(100, Math.max(0, Number(e.target.value))))} className={inp + " w-28"} />
+        </div>
+        <div className="flex-1 min-w-[120px]">
+          <label className="text-xs font-semibold text-slate-600 block mb-1">Bobot Nilai Esai (%)</label>
+          <input type="number" min={0} max={100} value={bobotEsai} onChange={e => setBobotEsai(Math.min(100, Math.max(0, Number(e.target.value))))} className={inp + " w-28"} />
+        </div>
+        <button onClick={saveBobot} disabled={bobotSaving} className={btn("blue") + " h-10"}>{bobotSaving ? "Menyimpan..." : "💾 Simpan Bobot"}</button>
+        <p className="text-xs text-slate-400">* Bobot digunakan untuk menghitung nilai akhir jika ada esai. Total harus 100%.</p>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari nama/NISN..." className={inp + " flex-1 min-w-48"} />
+        <select value={filterMapel} onChange={e=>handleFilterMapel(e.target.value)} className={inp + " w-auto"}><option>Semua</option>{mapelList.map(m=><option key={m}>{m}</option>)}</select>
+        <select value={filterAsesmen} onChange={e=>setFilterAsesmen(e.target.value)} className={inp + " w-auto"}>{asesmenTersedia.map(a=><option key={a}>{a}</option>)}</select>
+      </div>
+      {loading ? <div className="text-center py-10 text-slate-400"><div className="w-8 h-8 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" />Memuat data hasil ujian...</div>
+      : filtered.length === 0 ? <div className="text-center py-10 text-slate-400">{hasil.length===0 ? "Belum ada hasil ujian." : "Tidak ada data yang cocok dengan filter."}</div>
+      : <div className="overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="w-full text-xs">
+            <thead><tr className="bg-slate-800 text-white"><th className="px-3 py-3 text-left">Waktu</th><th className="px-3 py-3 text-left">NISN</th><th className="px-3 py-3 text-left">Nama</th><th className="px-3 py-3 text-left">Mapel</th><th className="px-3 py-3 text-left">Asesmen</th><th className="px-3 py-3 text-center">Skor Obj.</th><th className="px-3 py-3 text-center">Skor Esai</th><th className="px-3 py-3 text-center">Nilai Akhir</th><th className="px-3 py-3 text-center">Keterangan</th><th className="px-3 py-3 text-center">Aksi</th></tr></thead>
+            <tbody>{filtered.map((h, i) => {
+              const nilaiAkhir = hitungNilaiAkhir(h);
+              const sudahKoreksi = h.skorEsai !== undefined && h.skorEsai !== "";
+              const adaEsai = h.adaEsai === "TRUE" || h.adaEsai === true || (h.jawabanEsai && h.jawabanEsai !== "" && h.jawabanEsai !== "[]");
+              const kkm = getKKMForMapel(h.mapel);
+              const keterangan = nilaiAkhir >= kkm ? "Tuntas" : "Belum Tuntas";
+              return (
+                <tr key={i} className={i%2===0?"bg-white":"bg-slate-50"}>
+                  <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{h.waktu}</td>
+                  <td className="px-3 py-2.5 font-mono">{h.nisn}</td>
+                  <td className="px-3 py-2.5 font-medium">{h.nama}</td>
+                  <td className="px-3 py-2.5">{h.mapel}</td>
+                  <td className="px-3 py-2.5">{h.asesmen}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-blue-700">{h.skorObjektif ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-center">{!adaEsai ? <span className="text-slate-300">—</span> : sudahKoreksi ? <span className="font-bold text-green-600">{h.skorEsai}</span> : <span className="text-amber-600 font-bold">Belum</span>}</td>
+                  <td className="px-3 py-2.5 text-center"><span className={`font-extrabold text-sm ${nilaiAkhir>=kkm?"text-green-600":nilaiAkhir>=60?"text-amber-600":"text-red-500"}`}>{nilaiAkhir}</span></td>
+                  <td className="px-3 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${keterangan==="Tuntas"?"bg-green-100 text-green-700":"bg-red-100 text-red-600"}`}>{keterangan}</span></td>
+                  <td className="px-3 py-2.5 text-center">{adaEsai && <button onClick={() => { setModalKoreksi(h); setSkorPerSoal({}); }} className={`text-xs font-bold px-2 py-1 rounded-lg ${sudahKoreksi?"bg-green-100 text-green-700 hover:bg-green-200":"bg-amber-100 text-amber-700 hover:bg-amber-200"}`}>{sudahKoreksi ? "✏️ Edit" : "📝 Koreksi"}</button>}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </div>
+      }
+      {modalKoreksi && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e=>{ if(e.target===e.currentTarget) setModalKoreksi(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+              <div><h3 className="font-extrabold text-slate-800">📝 Koreksi Esai</h3><p className="text-xs text-slate-500">{modalKoreksi.nama} — {modalKoreksi.mapel} / {modalKoreksi.asesmen}</p></div>
+              <button onClick={() => setModalKoreksi(null)} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-amber-800 mb-2">Jawaban Esai Siswa</p>
+                {(() => {
+                  let jawabanEsaiList = [];
+                  try { jawabanEsaiList = JSON.parse(modalKoreksi.jawabanEsai || "[]"); } catch(e) { jawabanEsaiList = []; }
+                  if (jawabanEsaiList.length === 0) return <p className="text-xs text-amber-700">Tidak ada jawaban esai.</p>;
+                  return (
+                    <div className="space-y-3">
+                      {jawabanEsaiList.map((je, idx) => (
+                        <div key={idx} className="bg-white rounded-xl p-3 border border-amber-200 space-y-2">
+                          <p className="text-xs font-semibold text-slate-700">Soal {idx+1}: {je.soal}</p>
+                          {je.referensi && <p className="text-xs text-slate-400 italic">Referensi: {je.referensi}</p>}
+                          <p className="text-sm text-slate-800 bg-amber-50 p-2 rounded-lg">{je.jawaban || "(tidak dijawab)"}</p>
+                          <div className="flex items-center gap-3">
+                            <label className="text-xs font-bold text-slate-600">Skor (0–100):</label>
+                            <input type="number" min={0} max={100} value={skorPerSoal[idx]??""} onChange={e=>setSkorPerSoal(p=>({...p,[idx]:e.target.value}))} className="w-20 border-2 border-amber-300 rounded-lg px-2 py-1 text-center font-bold text-amber-800" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="flex gap-3"><button onClick={()=>{setModalKoreksi(null);setSkorPerSoal({});}} className={btn("slate") + " flex-1"}>Batal</button><button onClick={handleSimpanKoreksi} disabled={savingKoreksi} className={btn("green") + " flex-1"}>{savingKoreksi ? "Menyimpan..." : "✅ Simpan Koreksi"}</button></div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// PENGATURAN UJIAN (dengan foto guru)
+// ============================================================
+function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, addToast }) {
+  const [logoInput, setLogoInput] = useState(settings.logoUrl||"");
+  const [namaInput, setNamaInput] = useState(settings.namaSekolah||"");
+  const [namaGuruInput, setNamaGuruInput] = useState(settings.namaGuru||"");
+  const [nipGuruInput, setNipGuruInput] = useState(settings.nipGuru||"");
+  const [kotaTTDInput, setKotaTTDInput] = useState(settings.kotaTTD||"");
+  const [fotoGuruPreview, setFotoGuruPreview] = useState(settings.fotoGuru || "");
+  const [fotoGuruInput, setFotoGuruInput] = useState(settings.fotoGuru || "");
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl||"");
+  const [durasiInput, setDurasiInput] = useState(settings.durasiMenit||60);
+  const [savedSpreadsheetUrl, setSavedSpreadsheetUrl] = useState(settings.spreadsheetUrl||"");
+  const [saving, setSaving] = useState(false);
+  
+  const jam = Math.floor(durasiInput/60); 
+  const menit = Number(durasiInput)%60; 
+  const durasiDisplay = jam>0?`${jam} jam ${menit>0?menit+" menit":""}`:`${menit} menit`;
+  
+  const getInitials = () => {
+    const nama = namaGuruInput || settings.namaGuru || "Guru";
+    return nama.split(" ").map(n => n[0]).join("").toUpperCase().slice(0,2);
+  };
+
+  const handleFotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.match(/image\/(jpeg|jpg|png)/)) {
+      addToast("Hanya file JPG/PNG yang diperbolehkan!", "error");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      addToast("Ukuran file maksimal 2MB!", "error");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result;
+      setFotoGuruPreview(base64String);
+      setFotoGuruInput(base64String);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleHapusFoto = () => {
+    setFotoGuruPreview("");
+    setFotoGuruInput("");
+  };
+
+  const handleSave = async () => {
+    const durasi = Number(durasiInput);
+    if (!durasi||durasi<1||durasi>300) return addToast("Durasi harus 1–300 menit!","error");
+    const newSettings = { 
+      logoUrl:logoInput, 
+      namaSekolah:namaInput, 
+      namaGuru:namaGuruInput, 
+      nipGuru:nipGuruInput, 
+      kotaTTD:kotaTTDInput, 
+      durasiMenit:durasi, 
+      spreadsheetUrl,
+      fotoGuru: fotoGuruInput
+    };
+    onSaveSettings(newSettings);
+    setSavedSpreadsheetUrl(spreadsheetUrl);
+    setSaving(true);
+    const url = scriptUrl || APPS_SCRIPT_URL;
+    if (url && !url.includes("YOUR_APPS_SCRIPT_ID")) {
+      try {
+        const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanPengaturan", ...newSettings }) });
+        const d = await r.json();
+        if (d.status==="success") addToast("✅ Pengaturan disimpan ke Spreadsheet!","success");
+        else addToast("Tersimpan lokal. Gagal sinkron: "+(d.message||""),"warning");
+      } catch { addToast("Tersimpan lokal. Tidak bisa terhubung ke Apps Script.","warning"); }
+    } else addToast("Pengaturan disimpan lokal.","info");
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div><h2 className="text-xl font-extrabold text-slate-800">Pengaturan Ujian</h2><p className="text-sm text-slate-500">Identitas sekolah, durasi, dan koneksi spreadsheet</p></div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+        {/* Logo Sekolah */}
+        <Field label="URL Logo Sekolah" hint="💡 Google Drive: Upload → Bagikan → 'Siapa saja yang memiliki link' → Salin link">
+          <input value={logoInput} onChange={e=>setLogoInput(e.target.value)} placeholder="https://drive.google.com/file/d/..." className={inp} />
+          {logoInput && (
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg p-2" style={{minWidth:"64px"}}>
+                <LogoSekolah url={logoInput} className="max-h-14 max-w-16 object-contain" />
+              </div>
+              <div className="text-xs text-slate-500">
+                {isDriveUrl(logoInput) ? (extractDriveFileId(logoInput)?<p className="text-green-600">✓ File ID terdeteksi</p>:<p className="text-red-500">✗ Format URL Drive tidak dikenali</p>) : <p className="text-blue-600">✓ URL gambar biasa</p>}
+              </div>
+            </div>
+          )}
+        </Field>
+        
+        {/* Nama Sekolah */}
+        <Field label="Nama Sekolah"><input value={namaInput} onChange={e=>setNamaInput(e.target.value)} placeholder="SD Negeri ..." className={inp} /></Field>
+        
+        {/* Nama dan NIP Guru */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Nama Guru" hint="Untuk kolom TTD PDF"><input value={namaGuruInput} onChange={e=>setNamaGuruInput(e.target.value)} placeholder="Nama lengkap guru" className={inp} /></Field>
+          <Field label="NIP Guru"><input value={nipGuruInput} onChange={e=>setNipGuruInput(e.target.value)} placeholder="198XXXXXXXX" className={inp + " font-mono"} /></Field>
+        </div>
+        
+        {/* Foto Guru - Upload File */}
+        <Field label="Foto Guru" hint="Upload foto profil guru (format JPG/PNG, maks 2MB)">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex-shrink-0">
+              {fotoGuruPreview ? (
+                <img src={fotoGuruPreview} alt="Preview Foto Guru" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500 shadow-md" />
+              ) : settings.fotoGuru ? (
+                <img src={settings.fotoGuru} alt="Foto Guru" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500 shadow-md" onError={(e) => { e.target.onerror = null; e.target.src = ""; }} />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+                  {getInitials()}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <input type="file" accept="image/jpeg,image/png,image/jpg" onChange={handleFotoUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <p className="text-xs text-slate-400 mt-1">Maksimal 2MB, format JPG/PNG</p>
+            </div>
+            {(fotoGuruPreview || settings.fotoGuru) && (
+              <button type="button" onClick={handleHapusFoto} className="text-red-500 hover:text-red-700 text-sm px-3 py-1 rounded-lg border border-red-200 hover:bg-red-50">Hapus</button>
+            )}
+          </div>
+        </Field>
+        
+        {/* Kota Tanda Tangan */}
+        <Field label="Kota Penandatangan"><input value={kotaTTDInput} onChange={e=>setKotaTTDInput(e.target.value)} placeholder="Sumenep" className={inp} /></Field>
+        
+        {/* Durasi */}
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2"><span className="text-xl">⏱️</span><h4 className="font-bold text-amber-900 text-sm">Durasi Waktu Ujian</h4></div>
+          <div className="flex items-center gap-3"><input type="number" value={durasiInput} onChange={e=>setDurasiInput(e.target.value)} min={1} max={300} className="w-24 border-2 border-amber-300 focus:border-amber-500 rounded-xl px-3 py-3 text-center font-extrabold text-2xl text-amber-800 focus:outline-none bg-white" /><div><p className="text-sm font-bold text-amber-800">menit</p><p className="text-xs text-amber-600">= {durasiDisplay}</p></div></div>
+          <input type="range" min={10} max={180} step={5} value={durasiInput} onChange={e=>setDurasiInput(Number(e.target.value))} className="w-full accent-amber-500" />
+          <div className="flex flex-wrap gap-2">{[{l:"30 mnt",v:30},{l:"45 mnt",v:45},{l:"1 jam",v:60},{l:"1.5 jam",v:90},{l:"2 jam",v:120}].map(({l,v})=>(<button key={v} onClick={()=>setDurasiInput(v)} className={`text-xs px-3 py-2 rounded-xl font-bold ${Number(durasiInput)===v?"bg-amber-500 text-white":"bg-white text-amber-700 border border-amber-300 hover:bg-amber-100"}`}>{l}</button>))}</div>
+        </div>
+        
+        {/* Link Spreadsheet */}
+        <Field label="Link Google Spreadsheet" hint="Link spreadsheet untuk tombol akses cepat (opsional)">
+          <div className="flex gap-2"><input value={spreadsheetUrl} onChange={e=>setSpreadsheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className={inp + " flex-1 font-mono text-xs"} />{savedSpreadsheetUrl && <a href={savedSpreadsheetUrl} target="_blank" rel="noreferrer" className={btn("green")}>Buka ↗</a>}</div>
+        </Field>
+        
+        <button onClick={handleSave} disabled={saving} className={btn("blue") + " w-full py-3 text-base"}>{saving ? "Menyimpan..." : "💾 Simpan Pengaturan"}</button>
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 space-y-1">
+          <p className="font-bold text-blue-800">🔄 Sinkron Otomatis Antar Perangkat</p>
+          <ol className="list-decimal list-inside space-y-1"><li>Pengaturan disimpan ke sheet <strong>PENGATURAN</strong></li><li>Buka di HP/browser lain → otomatis termuat</li></ol>
+          <p className="mt-2 text-yellow-600">⚠️ Foto guru disimpan sebagai base64 di spreadsheet (ukuran besar). Untuk performa lebih baik, gunakan URL dari Google Drive.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// GURU PANEL (sidebar)
+// ============================================================
+function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, onSaveScriptUrl, mapelList, setMapelList, asesmenList, setAsesmenList }) {
+  const [activePage, setActivePage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const navItems = [
+    { id:"dashboard", icon:"🏠", label:"Dashboard" }, { id:"siswa", icon:"👤", label:"Data Siswa" },
+    { id:"mapel", icon:"📚", label:"Manajemen Mapel" }, { id:"soal", icon:"✏️", label:"Input Soal" },
+    { id:"rekap", icon:"📊", label:"Rekap Hasil" }, { id:"pengaturan", icon:"⚙️", label:"Pengaturan Ujian" },
+  ];
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="px-5 py-5 border-b border-slate-700"><p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Panel Guru</p><p className="text-white font-extrabold text-base mt-0.5">{settings.namaSekolah || "Portal Ujian"}</p></div>
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">{navItems.map(n => (<button key={n.id} onClick={() => { setActivePage(n.id); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors text-left ${activePage===n.id ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-700 hover:text-white"}`}><span className="text-lg w-6 text-center">{n.icon}</span><span>{n.label}</span></button>))}</nav>
+      <div className="px-3 py-4 border-t border-slate-700"><button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/20 hover:text-red-300"><span className="text-lg">🚪</span><span>Keluar</span></button></div>
+    </div>
+  );
+  const pageProps = { scriptUrl: scriptUrl||APPS_SCRIPT_URL, addToast, settings, onSaveSettings, onSaveScriptUrl, mapelList, setMapelList, asesmenList, setAsesmenList };
+  return (
+    <div className="min-h-screen bg-slate-100 flex">
+      <aside className="hidden md:flex flex-col w-60 bg-slate-800 flex-shrink-0 fixed inset-y-0 left-0 z-30"><SidebarContent /></aside>
+      {sidebarOpen && (<div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}><div className="absolute inset-0 bg-black/60" /><aside className="absolute left-0 top-0 bottom-0 w-64 bg-slate-800 flex flex-col z-50" onClick={e => e.stopPropagation()}><SidebarContent /></aside></div>)}
+      <div className="flex-1 md:ml-60 flex flex-col min-h-screen">
+        <header className="md:hidden bg-slate-800 text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-20"><button onClick={() => setSidebarOpen(true)} className="text-slate-300 hover:text-white p-1"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button><span className="font-bold">{navItems.find(n=>n.id===activePage)?.label}</span></header>
+        <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
+          {activePage==="dashboard" && <TabDashboard onNav={setActivePage} addToast={addToast} settings={settings} />}
+          {activePage==="siswa" && <TabSiswa {...pageProps} />}
+          {activePage==="mapel" && <TabMapel {...pageProps} />}
+          {activePage==="soal" && <TabInputSoal {...pageProps} />}
+          {activePage==="rekap" && <TabRekap {...pageProps} />}
+          {activePage==="pengaturan" && <TabPengaturan {...pageProps} onSaveScriptUrl={onSaveScriptUrl} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// HALAMAN SISWA (login)
+// ============================================================
+function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, asesmenList = DEFAULT_ASESMEN }) {
+  const [nisn, setNisn] = useState("");
+  const [namaLookup, setNamaLookup] = useState("");
+  const [kelasLookup, setKelasLookup] = useState("");
+  const [lookupStatus, setLookupStatus] = useState("");
+  const [mapel, setMapel] = useState(mapelList[0]);
+  const [asesmen, setAsesmen] = useState(asesmenList[0]);
   const [token, setToken] = useState("");
   const [err, setErr] = useState("");
+  const lookupTimer = useRef(null);
+
+  const handleNisnChange = (val) => {
+    setNisn(val);
+    setNamaLookup(""); setKelasLookup(""); setLookupStatus("");
+    clearTimeout(lookupTimer.current);
+    if (val.trim().length < 4) return;
+    lookupTimer.current = setTimeout(async () => {
+      setLookupStatus("loading");
+      try {
+        const url = APPS_SCRIPT_URL;
+        if (url.includes("YOUR_APPS_SCRIPT_ID")) {
+          console.error("URL Apps Script belum diganti!");
+          setLookupStatus("notfound");
+          return;
+        }
+        const fetchUrl = `${url}?action=getSiswaByNISN&nisn=${encodeURIComponent(val.trim())}`;
+        const response = await fetch(fetchUrl);
+        const data = await response.json();
+        if (data.status === "success" && data.data) {
+          setNamaLookup(data.data.nama || "");
+          setKelasLookup(data.data.kelas || "");
+          setLookupStatus("found");
+        } else {
+          setLookupStatus("notfound");
+        }
+      } catch (error) {
+        console.error("Fetch error:", error);
+        setLookupStatus("notfound");
+      }
+    }, 600);
+  };
 
   const handle = () => {
     setErr("");
-    if (!nama.trim()) return setErr("Nama harus diisi!");
     if (!nisn.trim()) return setErr("NISN harus diisi!");
-    if (!noAbsen.trim()) return setErr("No Absen harus diisi!");
+    if (!namaLookup && lookupStatus !== "found") return setErr("NISN tidak ditemukan dalam database siswa. Hubungi guru.");
     if (!token.trim()) return setErr("Token harus diisi!");
-    onMulaiUjian({ nama, nisn, noAbsen, mapel, asesmen, token });
+    onMulaiUjian({ nama: namaLookup, nisn, noAbsen: kelasLookup, mapel, asesmen, token });
   };
 
   return (
@@ -1304,41 +1811,62 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode }) {
         <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white text-center">
           <div className="text-5xl mb-2">📝</div>
           <h2 className="text-xl font-extrabold">Asesmen Sumatif</h2>
-          <p className="text-blue-200 text-sm mt-1">Isi data diri dengan benar</p>
+          <p className="text-blue-200 text-sm mt-1">Masukkan NISN dan token ujian</p>
         </div>
         <div className="p-6 space-y-4">
-          {[
-            { label:"Nama Lengkap", value:nama, set:setNama, placeholder:"Nama kamu...", type:"text", icon:"👤" },
-            { label:"NISN", value:nisn, set:setNisn, placeholder:"Nomor Induk Siswa...", type:"text", icon:"🎫" },
-            { label:"No Absen", value:noAbsen, set:setNoAbsen, placeholder:"Nomor absen...", type:"number", icon:"🔢" },
-          ].map(f => (
-            <div key={f.label}>
-              <label className="text-xs font-bold text-slate-600 block mb-1">{f.icon} {f.label}</label>
-              <input type={f.type} value={f.value} onChange={e => f.set(e.target.value)} placeholder={f.placeholder}
-                className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500" />
-            </div>
-          ))}
+          <div>
+            <label className="text-xs font-bold text-slate-600 block mb-1">🎫 NISN</label>
+            <input
+              type="text"
+              value={nisn}
+              onChange={e => handleNisnChange(e.target.value)}
+              placeholder="Masukkan NISN kamu..."
+              className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 font-mono tracking-wider"
+            />
+            {lookupStatus === "loading" && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-blue-500">
+                <div className="w-3 h-3 border-2 border-blue-300 border-t-blue-500 rounded-full animate-spin"></div>
+                Mencari data siswa...
+              </div>
+            )}
+            {lookupStatus === "found" && (
+              <div className="mt-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                <p className="text-xs text-green-600 font-semibold mb-0.5">✓ Siswa ditemukan</p>
+                <p className="text-sm font-extrabold text-green-800">{namaLookup}</p>
+                {kelasLookup && <p className="text-xs text-green-600">Kelas: {kelasLookup}</p>}
+              </div>
+            )}
+            {lookupStatus === "notfound" && nisn.trim().length >= 4 && (
+              <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <p className="text-xs text-red-600 font-semibold">✗ NISN tidak ditemukan</p>
+                <p className="text-xs text-red-500">Pastikan NISN benar atau hubungi guru untuk didaftarkan.</p>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-bold text-slate-600 block mb-1">📚 Mata Pelajaran</label>
               <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-blue-500">
-                {MAPEL_LIST.map(m => <option key={m}>{m}</option>)}
+                {mapelList.map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs font-bold text-slate-600 block mb-1">📋 Asesmen</label>
               <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-blue-500">
-                {ASESMEN_LIST.map(a => <option key={a}>{a}</option>)}
+                {asesmenList.map(a => <option key={a}>{a}</option>)}
               </select>
             </div>
           </div>
+
           <div>
             <label className="text-xs font-bold text-slate-600 block mb-1">🔑 Token Ujian</label>
-            <input value={token} onChange={e => setToken(e.target.value.toUpperCase())} placeholder="Tanya gurumu..."
-              className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest font-mono font-bold text-blue-700" />
+            <input value={token} onChange={e => setToken(e.target.value.toUpperCase())} placeholder="Tanya gurumu..." className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest font-mono font-bold text-blue-700" />
           </div>
+
           {err && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium text-center">{err}</div>}
-          <button onClick={handle} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold py-4 rounded-2xl text-base transition-all shadow-lg active:scale-95">
+
+          <button onClick={handle} disabled={lookupStatus === "loading" || !nisn.trim()} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold py-4 rounded-2xl text-base transition-all shadow-lg active:scale-95 disabled:opacity-50">
             🚀 Mulai Ujian
           </button>
           <button onClick={onGuruMode} className="w-full text-slate-400 hover:text-slate-600 text-xs py-2 transition-colors">
@@ -1393,29 +1921,14 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
 
   useEffect(() => {
     if (submitted || diskualifikasi) return;
-    timerRef.current = setInterval(() => {
-      setWaktu(t => {
-        if (t <= 1) { clearInterval(timerRef.current); handleSubmit(true); return 0; }
-        return t - 1;
-      });
-    }, 1000);
+    timerRef.current = setInterval(() => { setWaktu(t => { if (t <= 1) { clearInterval(timerRef.current); handleSubmit(true); return 0; } return t - 1; }); }, 1000);
     return () => clearInterval(timerRef.current);
   }, [submitted, diskualifikasi]);
 
   useEffect(() => {
     const onVisChange = () => {
       if (document.hidden && !submitted && !diskualifikasi) {
-        setTabViolation(v => {
-          const next = v + 1;
-          if (next >= MAX_VIOLATION) {
-            setDiskualifikasi(true);
-            clearInterval(timerRef.current);
-            addToast("Kamu telah diskualifikasi!", "error");
-          } else {
-            addToast(`⚠️ Peringatan ${next}/${MAX_VIOLATION}: Jangan pindah tab!`, "warning");
-          }
-          return next;
-        });
+        setTabViolation(v => { const next = v + 1; if (next >= MAX_VIOLATION) { setDiskualifikasi(true); clearInterval(timerRef.current); addToast("Kamu telah diskualifikasi!", "error"); } else { addToast(`⚠️ Peringatan ${next}/${MAX_VIOLATION}: Jangan pindah tab!`, "warning"); } return next; });
       }
     };
     document.addEventListener("visibilitychange", onVisChange);
@@ -1427,53 +1940,34 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
   const hitungNilai = () => {
     let totalPoint = 0, didapatPoint = 0;
     const detail = [];
+    let adaEsai = false;
     soalList.forEach((s, idx) => {
       const pt = Number(s.point) || 0;
       totalPoint += pt;
-      const benar = JSON.parse(s.jawabanBenar || "[]");
       const jwb = jawaban[s.id];
+      if (s.jenisSoal === "Uraian/Esai") { adaEsai = true; detail.push({ no:idx+1, jenis:"Esai", dapat:0, max:pt, ket: jwb ? "Dijawab (menunggu koreksi)" : "Tidak dijawab" }); return; }
+      const benar = JSON.parse(s.jawabanBenar || "[]");
       if (!jwb) { detail.push({ no:idx+1, jenis:s.jenisSoal, dapat:0, max:pt, ket:"Tidak dijawab" }); return; }
-      if (s.jenisSoal === "Pilihan Ganda") {
-        const dapat = jwb[0]===benar[0] ? pt : 0;
-        didapatPoint += dapat;
-        detail.push({ no:idx+1, jenis:"PG", dapat, max:pt, ket:dapat>0?"Benar":"Salah" });
-      } else if (s.jenisSoal === "Pilihan Ganda Kompleks") {
-        const opsiAll = JSON.parse(s.opsi || "[]");
-        const jml = opsiAll.length;
-        if (!jml) return;
-        let skor = 0;
-        opsiAll.forEach(o => { if (benar.includes(o) === jwb.includes(o)) skor++; });
-        const dapat = Math.round((pt * skor / jml) * 100) / 100;
-        didapatPoint += dapat;
-        detail.push({ no:idx+1, jenis:"PGK", dapat, max:pt, ket:`${skor}/${jml} opsi tepat` });
-      } else {
-        const jml = benar.length;
-        if (!jml) return;
-        let skor = 0;
-        benar.forEach((jb, i) => { if (jwb[i]===jb) skor++; });
-        const dapat = Math.round((pt * skor / jml) * 100) / 100;
-        didapatPoint += dapat;
-        detail.push({ no:idx+1, jenis:"B/S", dapat, max:pt, ket:`${skor}/${jml} benar` });
-      }
+      if (s.jenisSoal === "Pilihan Ganda") { const dapat = jwb[0]===benar[0] ? pt : 0; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"PG", dapat, max:pt, ket:dapat>0?"Benar":"Salah" }); }
+      else if (s.jenisSoal === "Pilihan Ganda Kompleks") { const opsiAll = JSON.parse(s.opsi || "[]"); const jml = opsiAll.length; if (!jml) return; let skor = 0; opsiAll.forEach(o => { if (benar.includes(o) === jwb.includes(o)) skor++; }); const dapat = Math.round((pt * skor / jml) * 100) / 100; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"PGK", dapat, max:pt, ket:`${skor}/${jml} opsi tepat` }); }
+      else { const jml = benar.length; if (!jml) return; let skor = 0; benar.forEach((jb, i) => { if (jwb[i]===jb) skor++; }); const dapat = Math.round((pt * skor / jml) * 100) / 100; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"B/S", dapat, max:pt, ket:`${skor}/${jml} benar` }); }
     });
     didapatPoint = Math.round(didapatPoint * 100) / 100;
-    const nilai = totalPoint > 0 ? Math.round((didapatPoint / totalPoint) * 100) : 0;
-    return { totalPoint, didapatPoint, nilai, detail };
+    const totalObjektif = soalList.filter(s => s.jenisSoal !== "Uraian/Esai").reduce((a, s) => a + Number(s.point||0), 0);
+    const nilai = totalObjektif > 0 ? Math.round((didapatPoint / totalObjektif) * 100) : 0;
+    return { totalPoint, didapatPoint, nilai, detail, adaEsai };
   };
 
   const handleSubmit = async (autoSubmit = false) => {
     if (submitted) return;
     clearInterval(timerRef.current);
-    const { nilai, didapatPoint, totalPoint, detail } = hitungNilai();
-    setHasilAkhir({ nilai, didapatPoint, totalPoint, detail });
+    const { nilai, didapatPoint, totalPoint, detail, adaEsai } = hitungNilai();
+    setHasilAkhir({ nilai, didapatPoint, totalPoint, detail, adaEsai });
     setSubmitted(true);
+    const jawabanEsaiList = soalList.filter(s => s.jenisSoal === "Uraian/Esai").map((s) => ({ soal: s.soal, referensi: s.jawabanReferensi || "", jawaban: jawaban[s.id] || "" }));
     try {
       const url = scriptUrl || APPS_SCRIPT_URL;
-      await fetch(url, { method:"POST", body:JSON.stringify({
-        action:"simpanHasil", nama:siswa.nama, nisn:siswa.nisn, noAbsen:siswa.noAbsen,
-        mapel:siswa.mapel, asesmen:siswa.asesmen, nilai, token:siswa.token,
-        waktu:new Date().toLocaleString("id-ID"),
-      })});
+      await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanHasil", nama:siswa.nama, nisn:siswa.nisn, noAbsen:siswa.noAbsen, mapel:siswa.mapel, asesmen:siswa.asesmen, nilai, adaEsai, jawabanEsai: adaEsai ? JSON.stringify(jawabanEsaiList) : "", token:siswa.token, waktu:new Date().toLocaleString("id-ID") }) });
     } catch { /* demo */ }
     if (!autoSubmit) addToast("Ujian berhasil dikumpulkan! 🎉", "success");
   };
@@ -1481,224 +1975,42 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
   const soal = soalList[currentIdx];
   const opsiList = soal ? JSON.parse(soal.opsi || "[]") : [];
   const pctDone = soalList.length > 0 ? Math.round(((currentIdx+1)/soalList.length)*100) : 0;
-
   const [pdfLoading, setPdfLoading] = useState(false);
+  const handleUnduhPDF = async () => { setPdfLoading(true); try { await unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa: jawaban, namaGuru, nipGuru, kotaTTD, namaSekolah }); } catch(e) { addToast("Gagal membuat PDF.", "error"); } finally { setPdfLoading(false); } };
 
-  const handleUnduhPDF = async () => {
-    setPdfLoading(true);
-    try {
-      await unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa: jawaban, namaGuru, nipGuru, kotaTTD, namaSekolah });
-    } catch (e) {
-      addToast("Gagal membuat PDF. Coba lagi.", "error");
-    } finally { setPdfLoading(false); }
-  };
-
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-      <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-      <p className="text-slate-600 font-medium">Memuat soal...</p>
-    </div>
-  );
-
-  if (diskualifikasi) return (
-    <div className="max-w-sm mx-auto px-4 py-10 text-center">
-      <div className="text-6xl mb-4">🚫</div>
-      <h2 className="text-2xl font-extrabold text-red-600 mb-2">Diskualifikasi</h2>
-      <p className="text-slate-600 mb-6">Kamu berpindah tab sebanyak {tabViolation} kali.</p>
-      <button onClick={onSelesai} className="bg-red-500 hover:bg-red-600 text-white font-bold px-6 py-3 rounded-xl">Kembali ke Beranda</button>
-    </div>
-  );
-
+  if (loading) return <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4"><div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div><p className="text-slate-600 font-medium">Memuat soal...</p></div>;
+  if (diskualifikasi) return <div className="max-w-sm mx-auto px-4 py-10 text-center"><div className="text-6xl mb-4">🚫</div><h2 className="text-2xl font-extrabold text-red-600 mb-2">Diskualifikasi</h2><p className="text-slate-600 mb-6">Kamu berpindah tab sebanyak {tabViolation} kali.</p><button onClick={onSelesai} className="bg-red-500 hover:bg-red-600 text-white font-bold px-6 py-3 rounded-xl">Kembali ke Beranda</button></div>;
   if (submitted && hasilAkhir) return (
     <div className="max-w-md mx-auto px-4 py-8">
       <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className={`p-8 text-center ${hasilAkhir.nilai>=75?"bg-gradient-to-br from-green-500 to-emerald-600":hasilAkhir.nilai>=50?"bg-gradient-to-br from-amber-400 to-orange-500":"bg-gradient-to-br from-red-500 to-rose-600"}`}>
-          <div className="text-6xl mb-3">{hasilAkhir.nilai>=75?"🎉":hasilAkhir.nilai>=50?"👍":"📚"}</div>
-          <p className="text-white/80 text-sm font-medium">Nilai Kamu</p>
-          <p className="text-7xl font-extrabold text-white">{hasilAkhir.nilai}</p>
-        </div>
+        <div className={`p-8 text-center ${hasilAkhir.nilai>=75?"bg-gradient-to-br from-green-500 to-emerald-600":hasilAkhir.nilai>=50?"bg-gradient-to-br from-amber-400 to-orange-500":"bg-gradient-to-br from-red-500 to-rose-600"}`}><div className="text-6xl mb-3">{hasilAkhir.nilai>=75?"🎉":hasilAkhir.nilai>=50?"👍":"📚"}</div><p className="text-white/80 text-sm font-medium">Nilai Kamu</p><p className="text-7xl font-extrabold text-white">{hasilAkhir.nilai}</p></div>
         <div className="p-6 space-y-4">
           <p className="font-bold text-slate-800 text-lg text-center">{siswa.nama}</p>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {[
-              { label:"Mapel", val:siswa.mapel },
-              { label:"Asesmen", val:siswa.asesmen },
-              { label:"Point", val:`${hasilAkhir.didapatPoint} / ${hasilAkhir.totalPoint}` },
-              { label:"Jumlah Soal", val:`${soalList.length} soal` },
-            ].map(s => (
-              <div key={s.label} className="bg-slate-50 rounded-xl p-3">
-                <p className="text-slate-500 text-xs">{s.label}</p>
-                <p className="font-bold text-slate-700 text-sm">{s.val}</p>
-              </div>
-            ))}
-          </div>
-          <div className="bg-slate-50 rounded-xl p-3">
-            <p className="text-xs font-bold text-slate-600 mb-2">📊 Rincian Poin Per Soal</p>
-            <div className="space-y-1">
-              {hasilAkhir.detail.map(d => (
-                <div key={d.no} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Soal {d.no} <span className="text-slate-400">({d.jenis})</span></span>
-                  <span className="font-medium text-slate-700">{d.ket} → {d.dapat}/{d.max} poin</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className={`rounded-xl p-3 text-sm font-medium text-center ${hasilAkhir.nilai>=75?"bg-green-50 text-green-700":hasilAkhir.nilai>=50?"bg-amber-50 text-amber-700":"bg-red-50 text-red-600"}`}>
-            {hasilAkhir.nilai>=75?"🌟 Luar biasa! Kamu berhasil!":hasilAkhir.nilai>=50?"👍 Cukup baik! Terus belajar ya!":"📖 Jangan menyerah, belajar lebih giat!"}
-          </div>
-
-          {/* ── TOMBOL DOWNLOAD PDF ── */}
-          <button
-            onClick={handleUnduhPDF}
-            disabled={pdfLoading}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-60">
-            {pdfLoading ? (
-              <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"></span> Membuat PDF...</>
-            ) : (
-              <>📥 Download PDF Hasil</>
-            )}
-          </button>
-
-          <button onClick={onSelesai} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors">
-            ← Kembali ke Beranda
-          </button>
+          <div className="grid grid-cols-2 gap-3 text-sm">{[{ label:"Mapel", val:siswa.mapel },{ label:"Asesmen", val:siswa.asesmen },{ label:"Point", val:`${hasilAkhir.didapatPoint} / ${hasilAkhir.totalPoint}` },{ label:"Jumlah Soal", val:`${soalList.length} soal` }].map(s => (<div key={s.label} className="bg-slate-50 rounded-xl p-3"><p className="text-slate-500 text-xs">{s.label}</p><p className="font-bold text-slate-700 text-sm">{s.val}</p></div>))}</div>
+          <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs font-bold text-slate-600 mb-2">📊 Rincian Poin Per Soal</p><div className="space-y-1">{hasilAkhir.detail.map(d => (<div key={d.no} className="flex items-center justify-between text-xs"><span className="text-slate-500">Soal {d.no} <span className="text-slate-400">({d.jenis})</span></span><span className="font-medium text-slate-700">{d.ket} → {d.dapat}/{d.max} poin</span></div>))}</div></div>
+          <div className={`rounded-xl p-3 text-sm font-medium text-center ${hasilAkhir.nilai>=75?"bg-green-50 text-green-700":hasilAkhir.nilai>=50?"bg-amber-50 text-amber-700":"bg-red-50 text-red-600"}`}>{hasilAkhir.nilai>=75?"🌟 Luar biasa! Kamu berhasil!":hasilAkhir.nilai>=50?"👍 Cukup baik! Terus belajar ya!":"📖 Jangan menyerah, belajar lebih giat!"}</div>
+          {hasilAkhir.adaEsai && <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-700 text-center">✏️ <strong>Ada soal uraian</strong> — nilai akhir akan diperbarui setelah guru mengoreksi jawaban esaimu.</div>}
+          <button onClick={handleUnduhPDF} disabled={pdfLoading} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-60">{pdfLoading ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"></span> Membuat PDF...</> : <>📥 Download PDF Hasil</>}</button>
+          <button onClick={onSelesai} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors">← Kembali ke Beranda</button>
         </div>
       </div>
     </div>
   );
-
   if (!soal) return <div className="text-center py-10 text-slate-500">Soal tidak tersedia</div>;
 
   return (
     <div className="max-w-2xl mx-auto px-3 py-4">
-      <div className="flex items-center justify-between mb-3 bg-white rounded-2xl shadow px-4 py-3">
-        <div>
-          <p className="text-xs text-slate-500 font-medium">{siswa.mapel} • {siswa.asesmen}</p>
-          <p className="text-sm font-bold text-slate-800">{siswa.nama}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {tabViolation > 0 && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-lg font-bold">⚠️ {tabViolation}/{MAX_VIOLATION}</span>}
-          <div className={`font-mono font-extrabold text-lg px-3 py-1 rounded-xl ${waktu<300?"bg-red-100 text-red-600 animate-pulse":waktu<durasiDetik/2?"bg-amber-100 text-amber-700":"bg-blue-100 text-blue-700"}`}>
-            ⏱ {formatWaktu(waktu)}
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-4 bg-white rounded-2xl shadow px-4 py-3">
-        <div className="flex justify-between text-xs text-slate-500 mb-1">
-          <span>Soal {currentIdx+1} dari {soalList.length}</span>
-          <span>{pctDone}%</span>
-        </div>
-        <div className="w-full bg-slate-200 rounded-full h-2.5 mb-3">
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500" style={{ width:`${pctDone}%` }} />
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {soalList.map((s, i) => (
-            <button key={i} onClick={() => setCurrentIdx(i)}
-              className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${i===currentIdx?"bg-blue-600 text-white":jawaban[s.id]?"bg-green-100 text-green-700 border border-green-300":"bg-slate-100 text-slate-500"}`}>
-              {i+1}
-            </button>
-          ))}
-        </div>
-      </div>
-
+      <div className="flex items-center justify-between mb-3 bg-white rounded-2xl shadow px-4 py-3"><div><p className="text-xs text-slate-500 font-medium">{siswa.mapel} • {siswa.asesmen}</p><p className="text-sm font-bold text-slate-800">{siswa.nama}</p></div><div className="flex items-center gap-2">{tabViolation > 0 && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-lg font-bold">⚠️ {tabViolation}/{MAX_VIOLATION}</span>}<div className={`font-mono font-extrabold text-lg px-3 py-1 rounded-xl ${waktu<300?"bg-red-100 text-red-600 animate-pulse":waktu<durasiDetik/2?"bg-amber-100 text-amber-700":"bg-blue-100 text-blue-700"}`}>⏱ {formatWaktu(waktu)}</div></div></div>
+      <div className="mb-4 bg-white rounded-2xl shadow px-4 py-3"><div className="flex justify-between text-xs text-slate-500 mb-1"><span>Soal {currentIdx+1} dari {soalList.length}</span><span>{pctDone}%</span></div><div className="w-full bg-slate-200 rounded-full h-2.5 mb-3"><div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500" style={{ width:`${pctDone}%` }} /></div><div className="flex flex-wrap gap-1.5">{soalList.map((s, i) => (<button key={i} onClick={() => setCurrentIdx(i)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${i===currentIdx?"bg-blue-600 text-white":jawaban[s.id]?"bg-green-100 text-green-700 border border-green-300":"bg-slate-100 text-slate-500"}`}>{i+1}</button>))}</div></div>
       <div className="bg-white rounded-2xl shadow-lg p-5 mb-4">
-        <div className="flex items-start gap-3 mb-4">
-          <span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex-shrink-0">{currentIdx+1}</span>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${soal.jenisSoal==="Pilihan Ganda"?"bg-blue-100 text-blue-700":soal.jenisSoal==="Pilihan Ganda Kompleks"?"bg-purple-100 text-purple-700":"bg-orange-100 text-orange-700"}`}>
-                {soal.jenisSoal}
-              </span>
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">⭐ {soal.point} poin</span>
-            </div>
-            <p className="text-slate-800 font-medium leading-relaxed">
-              <MathText text={soal.soal} />
-            </p>
-          </div>
-        </div>
-        {soal.gambar && soal.gambar.trim() && (
-          <div className="mb-4"><GambarSoal url={soal.gambar} alt="Gambar soal" /></div>
-        )}
-
-        {soal.jenisSoal === "Pilihan Ganda" && (
-          <div className="space-y-2">
-            {opsiList.map((o, i) => {
-              const sel = jawaban[soal.id]?.[0] === o;
-              return (
-                <button key={i} onClick={() => setJawaban(p => ({ ...p, [soal.id]:[o] }))}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${sel?"border-blue-500 bg-blue-50 text-blue-800":"border-slate-200 hover:border-blue-300 hover:bg-blue-50/50"}`}>
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 ${sel?"bg-blue-600 text-white":"bg-slate-100 text-slate-600"}`}>{String.fromCharCode(65+i)}</span>
-                  <span className="text-sm font-medium flex-1"><MathText text={o} /></span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {soal.jenisSoal === "Pilihan Ganda Kompleks" && (
-          <div className="space-y-2">
-            <p className="text-xs text-purple-600 font-semibold mb-2 bg-purple-50 px-3 py-1.5 rounded-lg">✅ Pilih SEMUA jawaban yang benar — skor parsial per opsi</p>
-            {opsiList.map((o, i) => {
-              const sel = (jawaban[soal.id] || []).includes(o);
-              return (
-                <button key={i} onClick={() => setJawaban(p => {
-                  const prev = p[soal.id] || [];
-                  return { ...p, [soal.id]:prev.includes(o)?prev.filter(x=>x!==o):[...prev,o] };
-                })}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${sel?"border-purple-500 bg-purple-50 text-purple-800":"border-slate-200 hover:border-purple-300"}`}>
-                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${sel?"bg-purple-600 text-white":"bg-slate-100 text-slate-500"}`}>{sel?"✓":String.fromCharCode(65+i)}</span>
-                  <span className="text-sm font-medium flex-1"><MathText text={o} /></span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {soal.jenisSoal === "Benar/Salah Kompleks" && (
-          <div className="space-y-3">
-            <p className="text-xs text-orange-600 font-semibold mb-2 bg-orange-50 px-3 py-1.5 rounded-lg">Tentukan Benar atau Salah — skor parsial per pernyataan</p>
-            {opsiList.map((o, i) => {
-              const val = (jawaban[soal.id] || [])[i];
-              return (
-                <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-xs text-slate-500 font-bold w-5 flex-shrink-0">{i+1}.</span>
-                  <p className="flex-1 text-sm text-slate-700"><MathText text={o} /></p>
-                  <div className="flex gap-2 flex-shrink-0">
-                    {["Benar","Salah"].map(v => (
-                      <button key={v} onClick={() => setJawaban(p => {
-                        const arr = [...(p[soal.id] || opsiList.map(()=>""))]; arr[i] = v;
-                        return { ...p, [soal.id]:arr };
-                      })}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${val===v?(v==="Benar"?"bg-green-500 text-white":"bg-red-500 text-white"):"bg-slate-200 text-slate-600"}`}>
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex items-start gap-3 mb-4"><span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex-shrink-0">{currentIdx+1}</span><div className="flex-1"><div className="flex items-center gap-2 mb-2 flex-wrap"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${soal.jenisSoal==="Pilihan Ganda"?"bg-blue-100 text-blue-700":soal.jenisSoal==="Pilihan Ganda Kompleks"?"bg-purple-100 text-purple-700":soal.jenisSoal==="Uraian/Esai"?"bg-indigo-100 text-indigo-700":"bg-orange-100 text-orange-700"}`}>{soal.jenisSoal}</span><span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">⭐ {soal.point} poin</span></div><p className="text-slate-800 font-medium leading-relaxed"><MathText text={soal.soal} /></p></div></div>
+        {soal.gambar && soal.gambar.trim() && <div className="mb-4"><GambarSoal url={soal.gambar} alt="Gambar soal" /></div>}
+        {soal.jenisSoal === "Pilihan Ganda" && <div className="space-y-2">{opsiList.map((o, i) => { const sel = jawaban[soal.id]?.[0] === o; return (<button key={i} onClick={() => setJawaban(p => ({ ...p, [soal.id]:[o] }))} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${sel?"border-blue-500 bg-blue-50 text-blue-800":"border-slate-200 hover:border-blue-300 hover:bg-blue-50/50"}`}><span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 ${sel?"bg-blue-600 text-white":"bg-slate-100 text-slate-600"}`}>{String.fromCharCode(65+i)}</span><span className="text-sm font-medium flex-1"><MathText text={o} /></span></button>); })}</div>}
+        {soal.jenisSoal === "Pilihan Ganda Kompleks" && <div className="space-y-2"><p className="text-xs text-purple-600 font-semibold mb-2 bg-purple-50 px-3 py-1.5 rounded-lg">✅ Pilih SEMUA jawaban yang benar — skor parsial per opsi</p>{opsiList.map((o, i) => { const sel = (jawaban[soal.id] || []).includes(o); return (<button key={i} onClick={() => setJawaban(p => { const prev = p[soal.id] || []; return { ...p, [soal.id]:prev.includes(o)?prev.filter(x=>x!==o):[...prev,o] }; })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all"><input type="checkbox" checked={sel} onChange={()=>{}} className="w-5 h-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500" /><span className="text-sm font-medium flex-1"><MathText text={o} /></span></button>); })}</div>}
+        {soal.jenisSoal === "Benar/Salah Kompleks" && <div className="space-y-3"><p className="text-xs text-orange-600 font-semibold mb-2 bg-orange-50 px-3 py-1.5 rounded-lg">Tentukan Benar atau Salah — skor parsial per pernyataan</p>{opsiList.map((o, i) => { const val = (jawaban[soal.id] || [])[i]; return (<div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200"><span className="text-xs text-slate-500 font-bold w-5 flex-shrink-0">{i+1}.</span><p className="flex-1 text-sm text-slate-700"><MathText text={o} /></p><div className="flex gap-2 flex-shrink-0">{["Benar","Salah"].map(v => (<button key={v} onClick={() => setJawaban(p => { const arr = [...(p[soal.id] || opsiList.map(()=>""))]; arr[i] = v; return { ...p, [soal.id]:arr }; })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${val===v?(v==="Benar"?"bg-green-500 text-white":"bg-red-500 text-white"):"bg-slate-200 text-slate-600"}`}>{v}</button>))}</div></div>); })}</div>}
+        {soal.jenisSoal === "Uraian/Esai" && <div className="space-y-3"><p className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg">✏️ Soal Uraian — Tulis jawaban kamu di bawah ini. Nilai ditentukan oleh guru.</p><textarea value={jawaban[soal.id] || ""} onChange={e => setJawaban(p => ({ ...p, [soal.id]: e.target.value }))} rows={6} placeholder="Tulis jawabanmu di sini..." className="w-full border-2 border-indigo-200 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-800 leading-relaxed resize-none focus:outline-none" /><div className="flex justify-between text-xs text-slate-400"><span>{(jawaban[soal.id] || "").length} karakter</span><span className={jawaban[soal.id] ? "text-green-500 font-semibold" : ""}>{jawaban[soal.id] ? "✓ Sudah dijawab" : "Belum dijawab"}</span></div></div>}
       </div>
-
-      <div className="flex gap-3">
-        <button onClick={() => setCurrentIdx(i => Math.max(0, i-1))} disabled={currentIdx===0}
-          className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-30">
-          ← Sebelumnya
-        </button>
-        {currentIdx < soalList.length-1 ? (
-          <button onClick={() => setCurrentIdx(i => i+1)}
-            className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">
-            Berikutnya →
-          </button>
-        ) : (
-          <button onClick={() => handleSubmit(false)}
-            className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-md">
-            🏁 Kumpulkan
-          </button>
-        )}
-      </div>
+      <div className="flex gap-3"><button onClick={() => setCurrentIdx(i => Math.max(0, i-1))} disabled={currentIdx===0} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-30">← Sebelumnya</button>{currentIdx < soalList.length-1 ? (<button onClick={() => setCurrentIdx(i => i+1)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">Berikutnya →</button>) : (<button onClick={() => handleSubmit(false)} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-md">🏁 Kumpulkan</button>)}</div>
       <p className="text-center text-xs text-slate-400 mt-3">Terjawab: {Object.keys(jawaban).length}/{soalList.length} soal</p>
     </div>
   );
@@ -1711,123 +2023,50 @@ export default function App() {
   const { toasts, addToast } = useToast();
   const [mode, setMode] = useState("siswa");
   const [siswa, setSiswa] = useState(null);
-
-  // Settings: baca dari localStorage sebagai nilai awal (cache)
-  const [settings, setSettings] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("appSettings") || "{}"); } catch { return {}; }
-  });
-  const [scriptUrl, setScriptUrl] = useState(() => {
-    try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; }
-  });
-
-  // ── Fetch settings dari Spreadsheet saat pertama buka ──
-  // Prioritas URL: localStorage (jika sudah diisi guru) → APPS_SCRIPT_URL (hardcode)
-  // Di perangkat baru yang belum pernah buka app ini, APPS_SCRIPT_URL langsung dipakai
+  const [settings, setSettings] = useState(() => { try { return JSON.parse(localStorage.getItem("appSettings") || "{}"); } catch { return {}; } });
+  const [scriptUrl, setScriptUrl] = useState(() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } });
+  const [mapelList, setMapelList] = useState([...DEFAULT_MAPEL]);
+  const [asesmenList, setAsesmenList] = useState([...DEFAULT_ASESMEN]);
+  const handleSetMapelList = (list) => { setMapelList(list); try { localStorage.setItem("customMapel", JSON.stringify(list)); } catch {} };
+  const handleSetAsesmenList = (list) => { setAsesmenList(list); try { localStorage.setItem("customAsesmen", JSON.stringify(list)); } catch {} };
+  
   useEffect(() => {
-    const url = (() => {
-      try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; }
-    })() || APPS_SCRIPT_URL;
-
-    // Skip jika masih placeholder belum diganti
+    const url = (() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } })() || APPS_SCRIPT_URL;
     if (!url || url.includes("YOUR_APPS_SCRIPT_ID")) return;
-
-    fetch(`${url}?action=getPengaturan`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.status === "success" && data.data && Object.keys(data.data).length > 0) {
-          const remote = data.data;
-          const merged = {
-            logoUrl       : remote.logoUrl         || "",
-            namaSekolah   : remote.namaSekolah     || "",
-            namaGuru      : remote.namaGuru        || "",
-            nipGuru       : remote.nipGuru         || "",
-            kotaTTD       : remote.kotaTTD         || "",
-            durasiMenit   : remote.durasiMenit ? Number(remote.durasiMenit) : 60,
-            spreadsheetUrl: remote.spreadsheetUrl  || "",
-          };
-          setSettings(merged);
-          // Simpan ke localStorage sebagai cache
-          try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
-          // Simpan juga scriptUrl ke localStorage agar offline tetap tersedia
-          try { localStorage.setItem("scriptUrl", url); } catch {}
-          setScriptUrl(url);
-        }
-      })
-      .catch(() => {
-        // Offline atau error jaringan → tetap pakai cache localStorage, tidak masalah
-      });
-  }, []); // sekali saat mount
-
-  const saveSettings = s => {
-    setSettings(s);
-    try { localStorage.setItem("appSettings", JSON.stringify(s)); } catch {}
-  };
-  const saveScriptUrl = u => {
-    setScriptUrl(u);
-    try { localStorage.setItem("scriptUrl", u); } catch {}
-  };
-
-  // Fullscreen saat ujian dimulai
-  const handleMulaiUjian = async (data) => {
-    setSiswa(data);
-    setMode("ujian");
-    try {
-      const el = document.documentElement;
-      if (el.requestFullscreen) await el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
-      else if (el.mozRequestFullScreen) await el.mozRequestFullScreen();
-    } catch { /* fullscreen ditolak browser → lanjutkan ujian biasa */ }
-  };
-
-  // Keluar fullscreen saat ujian selesai
-  const handleSelesaiUjian = async () => {
-    setSiswa(null);
-    setMode("siswa");
-    try {
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    fetch(`${url}?action=getPengaturan`).then(r => r.json()).then(data => {
+      if (data.status === "success" && data.data && Object.keys(data.data).length > 0) {
+        const remote = data.data;
+        const merged = { 
+          logoUrl: remote.logoUrl || "", 
+          namaSekolah: remote.namaSekolah || "", 
+          namaGuru: remote.namaGuru || "", 
+          nipGuru: remote.nipGuru || "", 
+          kotaTTD: remote.kotaTTD || "", 
+          durasiMenit: remote.durasiMenit ? Number(remote.durasiMenit) : 60, 
+          spreadsheetUrl: remote.spreadsheetUrl || "",
+          fotoGuru: remote.fotoGuru || ""
+        };
+        setSettings(merged); try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
+        try { localStorage.setItem("scriptUrl", url); } catch {}; setScriptUrl(url);
       }
-    } catch {}
-  };
-
+    }).catch(()=>{});
+    Promise.all([fetchMapelList(url), fetchAsesmenList(url)]).then(([mapels, asesmens]) => { setMapelList(mapels); setAsesmenList(asesmens); try { localStorage.setItem("customMapel", JSON.stringify(mapels)); } catch {}; try { localStorage.setItem("customAsesmen", JSON.stringify(asesmens)); } catch {}; }).catch(()=>{});
+  }, []);
+  
+  const saveSettings = s => { setSettings(s); try { localStorage.setItem("appSettings", JSON.stringify(s)); } catch {} };
+  const saveScriptUrl = u => { setScriptUrl(u); try { localStorage.setItem("scriptUrl", u); } catch {} };
+  const handleMulaiUjian = async (data) => { setSiswa(data); setMode("ujian"); try { const el = document.documentElement; if (el.requestFullscreen) await el.requestFullscreen(); else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen(); } catch {} };
+  const handleSelesaiUjian = async () => { setSiswa(null); setMode("siswa"); try { if (document.fullscreenElement || document.webkitFullscreenElement) { if (document.exitFullscreen) await document.exitFullscreen(); else if (document.webkitExitFullscreen) await document.webkitExitFullscreen(); } } catch {} };
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
       <Toast toasts={toasts} />
-      {mode !== "guru" && mode !== "guruLogin" && (
-        <AppHeader logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />
-      )}
+      {mode !== "guru" && mode !== "guruLogin" && <AppHeader logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />}
       <main className="pb-10">
-        {mode === "siswa" && (
-          <HalamanSiswa
-            onMulaiUjian={handleMulaiUjian}
-            onGuruMode={() => setMode("guruLogin")}
-          />
-        )}
-        {mode === "ujian" && siswa && (
-          <HalamanUjian
-            siswa={siswa}
-            scriptUrl={scriptUrl}
-            addToast={addToast}
-            onSelesai={handleSelesaiUjian}
-            durasiMenit={settings.durasiMenit || 60}
-            namaGuru={settings.namaGuru || ""}
-            nipGuru={settings.nipGuru || ""}
-            kotaTTD={settings.kotaTTD || ""}
-            namaSekolah={settings.namaSekolah || ""}
-          />
-        )}
+        {mode === "siswa" && <HalamanSiswa onMulaiUjian={handleMulaiUjian} onGuruMode={() => setMode("guruLogin")} mapelList={mapelList} asesmenList={asesmenList} />}
+        {mode === "ujian" && siswa && <HalamanUjian siswa={siswa} scriptUrl={scriptUrl} addToast={addToast} onSelesai={handleSelesaiUjian} durasiMenit={settings.durasiMenit || 60} namaGuru={settings.namaGuru || ""} nipGuru={settings.nipGuru || ""} kotaTTD={settings.kotaTTD || ""} namaSekolah={settings.namaSekolah || ""} />}
         {mode === "guruLogin" && <GuruLogin onLogin={() => setMode("guru")} />}
-        {mode === "guru" && (
-          <GuruPanel
-            addToast={addToast}
-            onLogout={() => setMode("siswa")}
-            settings={settings}
-            onSaveSettings={saveSettings}
-            scriptUrl={scriptUrl}
-            onSaveScriptUrl={saveScriptUrl}
-          />
-        )}
+        {mode === "guru" && <GuruPanel addToast={addToast} onLogout={() => setMode("siswa")} settings={settings} onSaveSettings={saveSettings} scriptUrl={scriptUrl} onSaveScriptUrl={saveScriptUrl} mapelList={mapelList} setMapelList={handleSetMapelList} asesmenList={asesmenList} setAsesmenList={handleSetAsesmenList} />}
       </main>
     </div>
   );

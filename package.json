@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "description": "Portal Ujian Digital — Aplikasi Web Asesmen",
   "type": "module",
-  "homepage": "https://hairurrahman.github.io/ujian-digital",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

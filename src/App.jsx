@@ -36,6 +36,7 @@ async function loadKatex() {
   katexLoaded = true;
 }
 
+// Render teks dengan formula KaTeX
 function MathText({ text, className = "" }) {
   const ref = useRef(null);
   const [ready, setReady] = useState(!!window.katex);
@@ -77,28 +78,42 @@ function MathText({ text, className = "" }) {
 const isMapelMath = (mapel) => mapel === "Matematika";
 
 const MATH_TOOLBAR = [
-  { label:"½", insert:"\\frac{}{}", title:"Pecahan" }, { label:"√", insert:"\\sqrt{}", title:"Akar" },
-  { label:"x²", insert:"^{2}", title:"Pangkat 2" }, { label:"xⁿ", insert:"^{}", title:"Pangkat n" },
-  { label:"×", insert:"\\times ", title:"Kali" }, { label:"÷", insert:"\\div ", title:"Bagi" },
-  { label:"±", insert:"\\pm ", title:"Plus minus" }, { label:"≤", insert:"\\leq ", title:"Kurang sama dengan" },
-  { label:"≥", insert:"\\geq ", title:"Lebih sama dengan" }, { label:"≠", insert:"\\neq ", title:"Tidak sama" },
-  { label:"π", insert:"\\pi ", title:"Pi" }, { label:"°", insert:"^{\\circ}", title:"Derajat" },
-  { label:"∑", insert:"\\sum_{i=1}^{n}", title:"Sigma" }, { label:"|x|", insert:"\\left|{}\\right|", title:"Nilai mutlak" },
+  { label:"½", insert:"\\frac{}{}", title:"Pecahan" },
+  { label:"√", insert:"\\sqrt{}", title:"Akar" },
+  { label:"x²", insert:"^{2}", title:"Pangkat 2" },
+  { label:"xⁿ", insert:"^{}", title:"Pangkat n" },
+  { label:"×", insert:"\\times ", title:"Kali" },
+  { label:"÷", insert:"\\div ", title:"Bagi" },
+  { label:"±", insert:"\\pm ", title:"Plus minus" },
+  { label:"≤", insert:"\\leq ", title:"Kurang sama dengan" },
+  { label:"≥", insert:"\\geq ", title:"Lebih sama dengan" },
+  { label:"≠", insert:"\\neq ", title:"Tidak sama" },
+  { label:"π", insert:"\\pi ", title:"Pi" },
+  { label:"°", insert:"^{\\circ}", title:"Derajat" },
+  { label:"∑", insert:"\\sum_{i=1}^{n}", title:"Sigma" },
+  { label:"|x|", insert:"\\left|{}\\right|", title:"Nilai mutlak" },
   { label:"( )", insert:"\\left({}\\right)", title:"Kurung" },
 ];
 
-function MathInput({ value, onChange, onPaste, rows = 3, placeholder, showToolbar = false, id }) {
-  const textareaRef = useRef(null), inputRef = useRef(null);
+function MathInput({ value, onChange, onPaste, rows = 3, placeholder = "Tulis teks atau formula $...$ di sini...", showToolbar = false, id }) {
+  const textareaRef = useRef(null);
+  const inputRef = useRef(null);
   const isMultiline = rows > 1;
+
   const insertAtCursor = (toInsert) => {
     const el = isMultiline ? textareaRef.current : inputRef.current;
     if (!el) return;
-    const start = el.selectionStart, end = el.selectionEnd;
-    const before = value.slice(0, start), after = value.slice(end);
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
     const dollarsBefore = (before.match(/\$/g) || []).length;
     let newText;
-    if (dollarsBefore % 2 === 1) newText = before + toInsert + after;
-    else newText = before + "$" + toInsert + "$" + after;
+    if (dollarsBefore % 2 === 1) {
+      newText = before + toInsert + after;
+    } else {
+      newText = before + "$" + toInsert + "$" + after;
+    }
     onChange({ target: { value: newText } });
     setTimeout(() => {
       el.focus();
@@ -106,14 +121,20 @@ function MathInput({ value, onChange, onPaste, rows = 3, placeholder, showToolba
       el.setSelectionRange(pos, pos);
     }, 0);
   };
+
   return (
     <div>
       {showToolbar && (
         <div className="bg-blue-50 border border-blue-200 rounded-t-xl px-2 py-1.5 flex flex-wrap gap-1 border-b-0">
           <span className="text-xs text-blue-500 font-semibold self-center mr-1">∑ Math:</span>
           {MATH_TOOLBAR.map(btn => (
-            <button key={btn.label} type="button" title={btn.title} onClick={() => insertAtCursor(btn.insert)}
-              className="text-xs bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-2 py-1 rounded-lg">
+            <button
+              key={btn.label}
+              type="button"
+              title={btn.title}
+              onClick={() => insertAtCursor(btn.insert)}
+              className="text-xs bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-2 py-1 rounded-lg transition-colors"
+            >
               {btn.label}
             </button>
           ))}
@@ -121,15 +142,32 @@ function MathInput({ value, onChange, onPaste, rows = 3, placeholder, showToolba
         </div>
       )}
       {isMultiline ? (
-        <textarea ref={textareaRef} id={id} value={value} onChange={onChange} onPaste={onPaste} rows={rows} placeholder={placeholder}
-          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`} />
+        <textarea
+          ref={textareaRef}
+          id={id}
+          value={value}
+          onChange={onChange}
+          onPaste={onPaste}
+          rows={rows}
+          placeholder={placeholder}
+          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none font-mono ${showToolbar ? "rounded-none" : "rounded-xl"}`}
+        />
       ) : (
-        <input ref={inputRef} id={id} type="text" value={value} onChange={onChange} onPaste={onPaste} placeholder={placeholder}
-          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono ${showToolbar ? "rounded-b-xl rounded-t-none" : "rounded-xl"}`} />
+        <input
+          ref={inputRef}
+          id={id}
+          type="text"
+          value={value}
+          onChange={onChange}
+          onPaste={onPaste}
+          placeholder={placeholder}
+          className={`w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 font-mono ${showToolbar ? "rounded-none" : "rounded-xl"}`}
+        />
       )}
       {showToolbar && value && value.includes("$") && (
-        <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
-          <span className="text-xs text-slate-400 mr-2">Preview:</span><MathText text={value} />
+        <div className="mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 leading-relaxed">
+          <span className="text-xs text-slate-400 mr-2">Preview:</span>
+          <MathText text={value} />
         </div>
       )}
     </div>
@@ -403,13 +441,13 @@ async function unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa, namaGuru, n
   doc.save(`Laporan_${mapelKode}_${asesmenKode}_${tanggalKode}.pdf`);
 }
 
-const toastColors = { success:"#22c55e", error:"#ef4444", warning:"#f59e0b", info:"#3b82f6" };
+const toastColors = { success:"#15803d", error:"#CC0000", warning:"#b45309", info:"#003082" };
 function Toast({ toasts }) {
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full">
       {toasts.map(t => (
-        <div key={t.id} className="rounded-xl shadow-lg px-4 py-3 text-white text-sm font-medium flex items-start gap-3"
-          style={{ backgroundColor: toastColors[t.type] || toastColors.info }}>
+        <div key={t.id} className="shadow-lg px-4 py-3 text-white text-sm font-bold flex items-start gap-3"
+          style={{ backgroundColor: toastColors[t.type] || toastColors.info, borderRadius: "0", borderLeft: "4px solid rgba(255,255,255,0.4)" }}>
           <span className="text-lg leading-none mt-0.5">{t.type==="success"?"✓":t.type==="error"?"✕":t.type==="warning"?"⚠":"ℹ"}</span>
           <span>{t.message}</span>
         </div>
@@ -429,18 +467,16 @@ function useToast() {
 
 function AppHeader({ logoUrl, namaSekolah }) {
   return (
-    <header className="bg-white border-b border-slate-200 shadow-sm">
-      <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col items-center gap-1">
-        <div className="flex items-center gap-4">
-          <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth:"52px" }}>
-            {logoUrl ? <LogoSekolah url={logoUrl} className="max-h-14 max-w-20 object-contain" /> : <span className="text-4xl">🏫</span>}
-          </div>
-          <div className="text-center">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Aplikasi Web Asesmen</p>
-            <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-800 leading-tight">Portal Ujian Digital</h1>
-            {namaSekolah && <p className="text-sm text-slate-500 font-medium mt-0.5">{namaSekolah}</p>}
-          </div>
-        </div>
+    <header style={{ background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)", borderBottom: "4px solid #003082" }}>
+      <div style={{ background: "#003082", height: "6px" }} />
+      <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col items-center gap-2">
+        {logoUrl && (
+          <LogoSekolah url={logoUrl} className="object-contain" style={{ maxHeight: "36px", maxWidth: "44px", mixBlendMode: "multiply", filter: "brightness(0) invert(1)" }} />
+        )}
+        <h1 className="text-lg md:text-xl font-black tracking-widest text-white uppercase leading-tight" style={{ fontFamily: "'Georgia', serif", textShadow: "0 1px 3px rgba(0,0,0,0.3)", letterSpacing: "0.12em" }}>
+          PORTAL UJIAN DIGITAL
+        </h1>
+        {namaSekolah && <p className="text-xs text-red-200 font-medium tracking-wide -mt-1">{namaSekolah}</p>}
       </div>
     </header>
   );
@@ -451,26 +487,36 @@ function GuruLogin({ onLogin }) {
   const [err, setErr] = useState("");
   const handle = () => { if (pwd === GURU_PASSWORD) { onLogin(); setErr(""); } else setErr("Password salah!"); };
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm text-center">
-        <div className="text-5xl mb-3">🔐</div>
-        <h2 className="text-2xl font-bold text-slate-800 mb-1">Mode Guru</h2>
-        <p className="text-slate-500 text-sm mb-5">Masukkan password untuk masuk</p>
-        <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key==="Enter" && handle()} placeholder="Password guru..." className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-blue-500 mb-3" />
-        {err && <p className="text-red-500 text-sm mb-3">{err}</p>}
-        <button onClick={handle} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">Masuk</button>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(160deg, #003082 0%, #001a4d 60%, #8B0000 100%)" }}>
+      <div className="bg-white rounded-none shadow-2xl w-full max-w-sm text-center overflow-hidden" style={{ border: "3px solid #CC0000" }}>
+        <div style={{ background: "linear-gradient(135deg, #CC0000, #990000)", padding: "24px 24px 20px" }}>
+          <div className="text-4xl mb-2">🔐</div>
+          <h2 className="text-xl font-black text-white tracking-wide" style={{ fontFamily: "'Georgia', serif" }}>PANEL GURU</h2>
+          <p className="text-red-200 text-xs mt-1 uppercase tracking-widest">Portal Ujian Digital</p>
+        </div>
+        <div className="p-6">
+          <p className="text-slate-600 text-sm mb-5 font-medium">Masukkan password untuk mengakses panel guru</p>
+          <input type="password" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key==="Enter" && handle()} placeholder="Password guru..." className="w-full border-2 border-slate-200 rounded-none px-4 py-3 text-slate-800 focus:outline-none mb-3" style={{ borderColor: "#003082", borderRadius: "0" }} />
+          {err && <p className="text-red-600 text-sm mb-3 font-semibold">{err}</p>}
+          <button onClick={handle} className="w-full text-white font-bold py-3 transition-colors uppercase tracking-widest text-sm" style={{ background: "#CC0000", borderRadius: "0" }}>Masuk</button>
+        </div>
+        <div style={{ background: "#003082", height: "6px" }} />
       </div>
     </div>
   );
 }
 
 function StatCard({ icon, label, value, color="blue" }) {
-  const colors = { blue:"bg-blue-50 text-blue-700 border-blue-200", green:"bg-green-50 text-green-700 border-green-200", purple:"bg-purple-50 text-purple-700 border-purple-200" };
+  const styles = {
+    blue: { background: "#eff6ff", color: "#003082", border: "1px solid #93c5fd" },
+    green: { background: "#f0fdf4", color: "#15803d", border: "1px solid #86efac" },
+    purple: { background: "#fef2f2", color: "#CC0000", border: "1px solid #fca5a5" },
+  };
   return (
-    <div className={`rounded-2xl border p-4 ${colors[color]}`}>
+    <div className="p-4" style={{ ...styles[color], borderRadius: "0", borderLeft: `4px solid ${color === "blue" ? "#003082" : color === "green" ? "#16a34a" : "#CC0000"}` }}>
       <div className="text-3xl mb-2">{icon}</div>
-      <div className="text-2xl font-extrabold">{value}</div>
-      <div className="text-xs font-semibold mt-1 opacity-75">{label}</div>
+      <div className="text-2xl font-black">{value}</div>
+      <div className="text-xs font-bold mt-1 opacity-75 uppercase tracking-wide">{label}</div>
     </div>
   );
 }
@@ -484,13 +530,13 @@ function Field({ label, children, hint }) {
     </div>
   );
 }
-const inp = "w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-500";
+const inp = "w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500" + " " + "rounded-none";
 const btn = (color="blue") => ({
-  blue:"bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
-  green:"bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
-  red:"bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
-  amber:"bg-amber-500 hover:bg-amber-600 text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
-  slate:"bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition-colors",
+  blue:"text-white font-bold py-2.5 px-4 text-sm transition-colors rounded-none" + " " + "bg-blue-700 hover:bg-blue-800",
+  green:"text-white font-bold py-2.5 px-4 text-sm transition-colors rounded-none" + " " + "bg-green-600 hover:bg-green-700",
+  red:"text-white font-bold py-2.5 px-4 text-sm transition-colors rounded-none" + " " + "bg-red-700 hover:bg-red-800",
+  amber:"text-white font-bold py-2.5 px-4 text-sm transition-colors rounded-none" + " " + "bg-amber-500 hover:bg-amber-600",
+  slate:"text-slate-700 font-bold py-2.5 px-4 text-sm transition-colors rounded-none" + " " + "bg-slate-200 hover:bg-slate-300",
 }[color]);
 
 // ============================================================
@@ -555,7 +601,7 @@ function TabDashboard({ onNav, addToast, settings }) {
   }, []);
 
   const aksiCepat = [
-    { icon:"✏️", label:"Buat Soal Baru", page:"soal", color:"bg-blue-600 hover:bg-blue-700" },
+    { icon:"✏️", label:"Buat Soal Baru", page:"soal", color:"bg-blue-700 hover:bg-blue-800" },
     { icon:"🔑", label:"Kelola Token", page:"mapel", color:"bg-green-600 hover:bg-green-700" },
     { icon:"📊", label:"Lihat Hasil Ujian", page:"rekap", color:"bg-purple-600 hover:bg-purple-700" },
     { icon:"👤", label:"Data Siswa", page:"siswa", color:"bg-amber-500 hover:bg-amber-600" },
@@ -575,21 +621,22 @@ function TabDashboard({ onNav, addToast, settings }) {
   return (
     <div className="space-y-6">
       {/* Profil Guru */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center gap-4 shadow-sm">
+      <div className="bg-white p-5 flex items-center gap-4" style={{ border: "1px solid #e2e8f0", borderLeft: "5px solid #CC0000", borderRadius: "0" }}>
       <div className="flex-shrink-0">
   {settings.fotoGuru ? (
     <img 
       src={settings.fotoGuru} 
       alt="Foto Guru" 
-      className="w-20 h-20 rounded-full object-cover border-3 border-blue-500 shadow-md" 
-      onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?background=blue&color=fff&name=${getInitials()}`; }}
+      className="w-20 h-20 rounded-full object-cover shadow-md" 
+      style={{ border: "3px solid #CC0000" }}
+      onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?background=CC0000&color=fff&name=${getInitials()}`; }}
     />
   ) : (
-    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+    <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-md" style={{ background: "linear-gradient(135deg,#CC0000,#003082)" }}>
       {getInitials()}
     </div>
   )}
-</div>  
+</div>
         <div className="flex-1">
           <h2 className="text-xl font-extrabold text-slate-800">Selamat Datang, {settings.namaGuru || "Guru"}!</h2>
           <p className="text-sm text-slate-500">{settings.namaSekolah || "Portal Ujian Digital"}</p>
@@ -606,10 +653,10 @@ function TabDashboard({ onNav, addToast, settings }) {
 
       {/* Aksi cepat */}
       <div>
-        <h3 className="text-sm font-bold text-slate-700 mb-3">⚡ Aksi Cepat</h3>
+        <h3 className="text-sm font-bold uppercase tracking-widest mb-3" style={{ color: "#003082" }}>⚡ Aksi Cepat</h3>
         <div className="grid grid-cols-2 gap-3">
-          {aksiCepat.map(a => (
-            <button key={a.page} onClick={() => onNav(a.page)} className={`${a.color} text-white rounded-2xl p-4 text-left transition-colors flex items-center gap-3`}>
+          {aksiCepat.map((a, idx) => (
+            <button key={a.page} onClick={() => onNav(a.page)} className="text-white p-4 text-left transition-colors flex items-center gap-3" style={{ background: idx === 0 ? "#CC0000" : idx === 1 ? "#003082" : idx === 2 ? "#7c3aed" : "#d97706", borderRadius: "0", borderBottom: "3px solid rgba(0,0,0,0.2)" }}>
               <span className="text-2xl">{a.icon}</span>
               <span className="font-bold text-sm">{a.label}</span>
             </button>
@@ -618,8 +665,8 @@ function TabDashboard({ onNav, addToast, settings }) {
       </div>
 
       {/* Info */}
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-700 space-y-1">
-        <p className="font-bold text-blue-800">💡 Cara Kerja Aplikasi</p>
+      <div className="p-4 text-xs space-y-1" style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderLeft: "4px solid #003082", borderRadius: "0" }}>
+        <p className="font-bold uppercase tracking-wide" style={{ color: "#003082" }}>💡 Cara Kerja Aplikasi</p>
         <p>1. Tambahkan siswa di menu <strong>Data Siswa</strong></p>
         <p>2. Input soal di menu <strong>Input Soal</strong></p>
         <p>3. Buat token ujian di <strong>Manajemen Mapel</strong></p>
@@ -723,17 +770,20 @@ function TabSiswa({ scriptUrl, addToast }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h2 className="text-xl font-extrabold text-slate-800">Data Siswa</h2><p className="text-sm text-slate-500">{daftarSiswa.length} siswa terdaftar</p></div>
+        <div>
+          <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Data Siswa</h2>
+          <p className="text-sm text-slate-500">{daftarSiswa.length} siswa terdaftar</p>
+        </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={handleDownloadTemplate} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-4 rounded-xl text-sm">📥 Download Template</button>
-          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="bg-green-100 hover:bg-green-200 text-green-800 font-bold py-2 px-4 rounded-xl text-sm disabled:opacity-50">
+          <button onClick={handleDownloadTemplate} className="font-bold py-2 px-4 text-sm" style={{ background: "#f1f5f9", color: "#475569", borderRadius: "0", border: "1px solid #cbd5e1" }}>📥 Download Template</button>
+          <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="font-bold py-2 px-4 text-sm disabled:opacity-50" style={{ background: "#f0fdf4", color: "#15803d", borderRadius: "0", border: "1px solid #86efac" }}>
             {importing ? <><span className="w-4 h-4 border-2 border-green-400 border-t-green-700 rounded-full animate-spin inline-block" /> Mengimpor...</> : <>📤 Import XLSX/CSV</>}
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileImport} />
           <button onClick={() => setShowForm(v => !v)} className={btn(showForm ? "slate" : "blue")}>{showForm ? "✕ Batal" : "➕ Tambah Manual"}</button>
         </div>
       </div>
-      <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-xs text-green-700">
+      <div className="p-3 text-xs space-y-1" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderLeft: "4px solid #16a34a", borderRadius: "0", color: "#15803d" }}>
         <p className="font-bold mb-1">📋 Cara Import Massal:</p>
         <p>1. Klik <strong>Download Template</strong> → buka di Excel/Google Sheets</p>
         <p>2. Isi data siswa (NISN, Nama, Kelas) sesuai kolom</p>
@@ -741,8 +791,8 @@ function TabSiswa({ scriptUrl, addToast }) {
         <p>4. Klik <strong>Import XLSX/CSV</strong> → pilih file → data otomatis masuk</p>
       </div>
       {showForm && (
-        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-4">
-          <h3 className="font-bold text-blue-800 text-sm">Tambah Siswa Manual</h3>
+        <div className="p-5 space-y-4" style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderLeft: "4px solid #003082", borderRadius: "0" }}>
+          <h3 className="font-bold text-sm uppercase tracking-wide" style={{ color: "#003082" }}>Tambah Siswa Manual</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Field label="NISN"><input value={nisn} onChange={e=>setNisn(e.target.value)} placeholder="10 digit NISN" className={inp} maxLength={20} /></Field>
             <Field label="Nama Lengkap"><input value={nama} onChange={e=>setNama(e.target.value)} placeholder="Nama lengkap siswa" className={inp} /></Field>
@@ -755,13 +805,13 @@ function TabSiswa({ scriptUrl, addToast }) {
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Cari siswa (nama/NISN/kelas)..." className={inp + " mb-3"} />
         {loading ? <div className="text-center py-8 text-slate-400">Memuat data siswa...</div>
         : filtered.length === 0 ? <div className="text-center py-8 text-slate-400">{daftarSiswa.length === 0 ? "Belum ada siswa. Tambah manual atau import dari Excel." : "Tidak ada siswa yang cocok."}</div>
-        : <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        : <div className="overflow-x-auto" style={{ border: "1px solid #e2e8f0", borderRadius: "0" }}>
             <table className="w-full text-sm">
-              <thead><tr className="bg-slate-800 text-white"><th className="px-4 py-3 text-left">NISN</th><th className="px-4 py-3 text-left">Nama</th><th className="px-4 py-3 text-left">Kelas</th><th className="px-4 py-3 text-center">Aksi</th></tr></thead>
+              <thead><tr style={{ background: "#003082" }} className="text-white"><th className="px-4 py-3 text-left">NISN</th><th className="px-4 py-3 text-left">Nama</th><th className="px-4 py-3 text-left">Kelas</th><th className="px-4 py-3 text-center">Aksi</th></tr></thead>
               <tbody>{filtered.map((s, i) => (
-                <tr key={s.nisn} className={i%2===0?"bg-white":"bg-slate-50"}>
+                <tr key={s.nisn} style={{ background: i%2===0 ? "#fff" : "#f8fafc" }}>
                   <td className="px-4 py-3 font-mono text-xs">{s.nisn}</td><td className="px-4 py-3 font-medium">{s.nama}</td><td className="px-4 py-3">{s.kelas}</td>
-                  <td className="px-4 py-3 text-center"><button onClick={() => handleHapus(s.nisn)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded-lg hover:bg-red-50">Hapus</button></td>
+                  <td className="px-4 py-3 text-center"><button onClick={() => handleHapus(s.nisn)} className="text-xs font-bold px-2 py-1" style={{ color: "#CC0000", borderRadius: "0" }}>Hapus</button></td>
                 </tr>
               ))}</tbody>
             </table>
@@ -954,29 +1004,32 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
 
   return (
     <div className="space-y-6">
-      <div><h2 className="text-xl font-extrabold text-slate-800">Manajemen Mapel & Token</h2><p className="text-sm text-slate-500">Kelola mata pelajaran, asesmen, token, dan KKM.</p></div>
+      <div>
+        <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Manajemen Mapel & Token</h2>
+        <p className="text-sm text-slate-500">Kelola mata pelajaran, asesmen, token, dan KKM.</p>
+      </div>
       <div className="grid md:grid-cols-2 gap-5">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-          <h3 className="font-bold text-slate-700">📚 Mata Pelajaran</h3>
+        <div className="bg-white p-5 space-y-4" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #003082", borderRadius: "0" }}>
+          <h3 className="font-bold uppercase tracking-wide text-sm" style={{ color: "#003082" }}>📚 Mata Pelajaran</h3>
           <div className="flex gap-2"><input value={newMapel} onChange={e=>setNewMapel(e.target.value)} placeholder="Tambah mapel baru..." className={inp + " flex-1"} onKeyDown={e=>e.key==="Enter" && handleTambahMapel()} /><button onClick={handleTambahMapel} className={btn("blue")}>+ Tambah</button></div>
           <div className="space-y-1 max-h-60 overflow-y-auto">
             {mapelList.map(m => (
-              <div key={m} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
-                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{m}</span>{!DEFAULT_MAPEL.includes(m) && <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">Kustom</span>}</div>
-                {!DEFAULT_MAPEL.includes(m) && <button onClick={() => handleHapusMapel(m)} className="text-red-400 hover:text-red-600 text-xs font-medium">Hapus</button>}
+              <div key={m} className="flex items-center justify-between px-3 py-2" style={{ background: "#f8fafc", borderLeft: "3px solid #003082", marginBottom: "2px" }}>
+                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{m}</span>{!DEFAULT_MAPEL.includes(m) && <span className="text-xs px-1.5 py-0.5 font-medium" style={{ background: "#eff6ff", color: "#003082", borderRadius: "0" }}>Kustom</span>}</div>
+                {!DEFAULT_MAPEL.includes(m) && <button onClick={() => handleHapusMapel(m)} className="text-xs font-medium" style={{ color: "#CC0000" }}>Hapus</button>}
               </div>
             ))}
           </div>
           <p className="text-xs text-slate-400">Total: {mapelList.length} mapel ({mapelList.length - DEFAULT_MAPEL.length} kustom)</p>
         </div>
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-          <h3 className="font-bold text-slate-700">📋 Jenis Asesmen</h3>
+        <div className="bg-white p-5 space-y-4" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #CC0000", borderRadius: "0" }}>
+          <h3 className="font-bold uppercase tracking-wide text-sm" style={{ color: "#CC0000" }}>📋 Jenis Asesmen</h3>
           <div className="flex gap-2"><input value={newAsesmen} onChange={e=>setNewAsesmen(e.target.value)} placeholder="Tambah asesmen baru..." className={inp + " flex-1"} onKeyDown={e=>e.key==="Enter" && handleTambahAsesmen()} /><button onClick={handleTambahAsesmen} className={btn("blue")}>+ Tambah</button></div>
           <div className="space-y-1 max-h-60 overflow-y-auto">
             {asesmenList.map(a => (
-              <div key={a} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
-                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{a}</span>{!DEFAULT_ASESMEN.includes(a) && <span className="text-xs bg-green-100 text-green-600 px-1.5 py-0.5 rounded font-medium">Kustom</span>}</div>
-                {!DEFAULT_ASESMEN.includes(a) && <button onClick={() => handleHapusAsesmen(a)} className="text-red-400 hover:text-red-600 text-xs font-medium">Hapus</button>}
+              <div key={a} className="flex items-center justify-between px-3 py-2" style={{ background: "#f8fafc", borderLeft: "3px solid #CC0000", marginBottom: "2px" }}>
+                <div className="flex items-center gap-2"><span className="text-sm font-medium text-slate-700">{a}</span>{!DEFAULT_ASESMEN.includes(a) && <span className="text-xs px-1.5 py-0.5 font-medium" style={{ background: "#fef2f2", color: "#CC0000", borderRadius: "0" }}>Kustom</span>}</div>
+                {!DEFAULT_ASESMEN.includes(a) && <button onClick={() => handleHapusAsesmen(a)} className="text-xs font-medium" style={{ color: "#CC0000" }}>Hapus</button>}
               </div>
             ))}
           </div>
@@ -985,14 +1038,14 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
       </div>
 
       {/* KKM Settings */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-        <h3 className="font-bold text-slate-700">🎯 Nilai Ketuntasan Minimal (KKM) per Mapel</h3>
+      <div className="bg-white p-5 space-y-4" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #16a34a", borderRadius: "0" }}>
+        <h3 className="font-bold uppercase tracking-wide text-sm" style={{ color: "#15803d" }}>🎯 Nilai Ketuntasan Minimal (KKM) per Mapel</h3>
         {kkmLoading ? <p className="text-xs text-slate-400">Memuat KKM...</p> : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {mapelList.map(mapel => (
               <div key={mapel} className="flex items-center gap-2">
                 <label className="text-xs font-medium text-slate-600 w-32 truncate">{mapel}</label>
-                <input type="number" min={0} max={100} value={kkmData[mapel] !== undefined ? kkmData[mapel] : ""} onChange={e => handleKKMChange(mapel, e.target.value)} placeholder="75" className="w-20 border-2 border-slate-200 rounded-lg px-2 py-1 text-sm text-center" />
+                <input type="number" min={0} max={100} value={kkmData[mapel] !== undefined ? kkmData[mapel] : ""} onChange={e => handleKKMChange(mapel, e.target.value)} placeholder="75" className="w-20 border-2 border-slate-200 px-2 py-1 text-sm text-center" style={{ borderRadius: "0" }} />
                 <span className="text-xs text-slate-400">(default 75)</span>
               </div>
             ))}
@@ -1002,11 +1055,11 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
         <p className="text-xs text-slate-500">* KKM digunakan untuk menentukan "Tuntas" / "Belum Tuntas" di halaman Rekap Hasil.</p>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">✅ Mapel dan asesmen kustom otomatis tersedia di login, input soal, dan rekap hasil.</div>
+      <div className="p-3 text-xs" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderLeft: "4px solid #16a34a", borderRadius: "0", color: "#15803d" }}>✅ Mapel dan asesmen kustom otomatis tersedia di login, input soal, dan rekap hasil.</div>
       
       {/* Token Management */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-        <h3 className="font-bold text-slate-700">🔑 Token Ujian</h3>
+      <div className="bg-white p-5 space-y-4" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #d97706", borderRadius: "0" }}>
+        <h3 className="font-bold uppercase tracking-wide text-sm" style={{ color: "#b45309" }}>🔑 Token Ujian</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Field label="Mata Pelajaran"><select value={tokenMapel} onChange={e=>setTokenMapel(e.target.value)} className={inp}>{mapelList.map(m=><option key={m}>{m}</option>)}</select></Field>
           <Field label="Asesmen"><select value={tokenAsesmen} onChange={e=>setTokenAsesmen(e.target.value)} className={inp}>{asesmenList.map(a=><option key={a}>{a}</option>)}</select></Field>
@@ -1015,16 +1068,16 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
         <button onClick={handleSimpanToken} className={btn("green") + " w-full md:w-auto"}>🔑 Simpan Token</button>
         
         <div>
-          <div className="flex items-center justify-between mb-2"><p className="text-xs font-bold text-slate-600">Daftar Token Aktif</p><button onClick={fetchToken} className="text-xs text-blue-500 hover:underline">🔄 Refresh</button></div>
+          <div className="flex items-center justify-between mb-2"><p className="text-xs font-bold text-slate-600 uppercase">Daftar Token Aktif</p><button onClick={fetchToken} className="text-xs" style={{ color: "#003082" }}>🔄 Refresh</button></div>
           {loadToken ? <p className="text-xs text-slate-400">Memuat...</p> : daftarToken.length === 0 ? <p className="text-xs text-slate-400">Belum ada token</p> : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <div className="overflow-x-auto" style={{ border: "1px solid #e2e8f0", borderRadius: "0" }}>
               <table className="w-full text-xs">
-                <thead><tr className="bg-slate-100"><th className="px-3 py-2 text-left">Mapel</th><th className="px-3 py-2 text-left">Asesmen</th><th className="px-3 py-2 text-left">Token</th><th className="px-3 py-2 text-center">Status</th><th className="px-3 py-2 text-center">Aksi</th></tr></thead>
+                <thead><tr style={{ background: "#003082" }} className="text-white"><th className="px-3 py-2 text-left">Mapel</th><th className="px-3 py-2 text-left">Asesmen</th><th className="px-3 py-2 text-left">Token</th><th className="px-3 py-2 text-center">Status</th><th className="px-3 py-2 text-center">Aksi</th></tr></thead>
                 <tbody>{daftarToken.map((t, i) => (
-                  <tr key={i} className={i%2===0?"bg-white":"bg-slate-50"}>
+                  <tr key={i} style={{ background: i%2===0 ? "#fff" : "#f8fafc" }}>
                     <td className="px-3 py-2">{t.mapel}</td>
                     <td className="px-3 py-2">{t.asesmen}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-blue-600">{t.token}</td>
+                    <td className="px-3 py-2 font-mono font-bold" style={{ color: "#003082" }}>{t.token}</td>
                     <td className="px-3 py-2 text-center">
                       <button onClick={() => handleToggleStatus(t.mapel, t.asesmen, t.token, t.aktif)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${t.aktif === "TRUE" ? "bg-green-500" : "bg-gray-300"}`}>
                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${t.aktif === "TRUE" ? "translate-x-6" : "translate-x-1"}`} />
@@ -1032,7 +1085,7 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
                       <span className="ml-2 text-xs font-medium">{t.aktif === "TRUE" ? "Aktif" : "Nonaktif"}</span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <button onClick={() => openEditModal(t)} className="text-blue-500 hover:text-blue-700 text-xs font-medium px-2 py-1 rounded">✏️ Edit</button>
+                      <button onClick={() => openEditModal(t)} className="text-xs font-medium px-2 py-1" style={{ color: "#003082" }}>✏️ Edit</button>
                     </td>
                   </tr>
                 ))}</tbody>
@@ -1045,8 +1098,11 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
       {/* Modal Edit Token */}
       {editModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e=>{ if(e.target===e.currentTarget) closeEditModal(); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="text-lg font-extrabold text-slate-800 mb-4">✏️ Edit Token</h3>
+          <div className="bg-white shadow-2xl w-full max-w-md p-6" style={{ border: "2px solid #003082", borderRadius: "0" }}>
+            <div className="flex items-center gap-2 mb-4" style={{ borderBottom: "3px solid #CC0000", paddingBottom: "10px" }}>
+              <span className="text-lg">✏️</span>
+              <h3 className="text-lg font-black uppercase tracking-wide" style={{ color: "#003082" }}>Edit Token</h3>
+            </div>
             <div className="space-y-4">
               <Field label="Mata Pelajaran"><input value={editModal.mapel} disabled className={inp + " bg-slate-100"} /></Field>
               <Field label="Asesmen"><input value={editModal.asesmen} disabled className={inp + " bg-slate-100"} /></Field>
@@ -1066,7 +1122,142 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
 }
 
 // ============================================================
-// INPUT SOAL (sama seperti sebelumnya)
+// RICH TEXT EDITOR dengan toolbar (bold, italic, list, formula)
+// ============================================================
+function RichTextEditor({ value, onChange, placeholder = "Tulis soal di sini..." }) {
+  const editorRef = useRef(null);
+  const [isFocused, setIsFocused] = useState(false);
+
+  // Inisialisasi editor saat mount
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, []);
+
+  const handleInput = () => {
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+      
+      const node = selection.getRangeAt(0).startContainer;
+      const isInList = node.parentElement?.closest?.("li") || node.closest?.("li");
+      
+      if (isInList) {
+        e.preventDefault();
+        document.execCommand("insertParagraph", false);
+        setTimeout(() => {
+          const newSelection = window.getSelection();
+          if (newSelection.rangeCount) {
+            const newNode = newSelection.getRangeAt(0).startContainer;
+            const newLi = newNode.parentElement?.closest?.("li");
+            if (newLi && newLi.innerText.trim() === "") {
+              newLi.remove();
+            }
+          }
+        }, 10);
+      }
+    }
+  };
+
+  const execCommand = (command, val = null) => {
+    document.execCommand(command, false, val);
+    handleInput();
+    editorRef.current?.focus();
+  };
+
+  const insertFormula = () => {
+    const formula = prompt("Masukkan formula LaTeX (contoh: \\frac{1}{2} atau \\sqrt{x})", "\\frac{}{}");
+    if (formula) {
+      document.execCommand("insertText", false, `$${formula}$`);
+      handleInput();
+      editorRef.current?.focus();
+    }
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    handleInput();
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  // Cek apakah ada formula untuk menampilkan preview
+  const hasFormula = () => {
+    return value && /\$[^$]+\$/.test(value);
+  };
+
+  // Hilangkan tag HTML untuk preview teks biasa
+  const stripHtml = (html) => {
+    const temp = document.createElement("div");
+    temp.innerHTML = html;
+    return temp.textContent || temp.innerText || "";
+  };
+
+  const plainText = stripHtml(value || "");
+
+  // Cek apakah editor kosong (hanya berisi <br> atau kosong)
+  const isEmpty = !value || value === "<br>" || value === "";
+
+  return (
+    <div className="space-y-2">
+      <div className="border-2 border-slate-200 rounded-xl overflow-hidden focus-within:border-blue-500 transition-colors relative">
+        <div className="bg-slate-50 border-b border-slate-200 px-2 py-1.5 flex flex-wrap gap-1">
+          <button type="button" onClick={() => execCommand("bold")} className="p-1.5 rounded hover:bg-slate-200 text-slate-600 font-bold" title="Bold"><span className="font-bold text-sm">B</span></button>
+          <button type="button" onClick={() => execCommand("italic")} className="p-1.5 rounded hover:bg-slate-200 text-slate-600 italic" title="Italic"><span className="italic text-sm">I</span></button>
+          <div className="w-px h-6 bg-slate-300 mx-1 self-center" />
+          <button type="button" onClick={() => execCommand("insertOrderedList")} className="p-1.5 rounded hover:bg-slate-200 text-slate-600" title="Numbered List"><span className="text-sm">1. List</span></button>
+          <button type="button" onClick={() => execCommand("insertUnorderedList")} className="p-1.5 rounded hover:bg-slate-200 text-slate-600" title="Bullet List"><span className="text-sm">• List</span></button>
+          <div className="w-px h-6 bg-slate-300 mx-1 self-center" />
+          <button type="button" onClick={insertFormula} className="p-1.5 rounded hover:bg-blue-100 text-blue-600 font-mono" title="Insert Formula"><span className="text-sm font-bold">∑ Formula</span></button>
+        </div>
+        
+        <div
+          ref={editorRef}
+          contentEditable
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          className="w-full px-4 py-3 text-sm text-slate-800 focus:outline-none min-h-[120px] max-h-[300px] overflow-y-auto"
+          style={{ lineHeight: "1.6" }}
+        />
+        
+        {/* Placeholder hanya muncul saat kosong dan tidak fokus */}
+        {isEmpty && !isFocused && (
+          <div className="absolute text-slate-400 text-sm px-4 py-3 top-10 left-0 pointer-events-none">
+            {placeholder}
+          </div>
+        )}
+      </div>
+      
+      {/* Preview menggunakan MathText (sama seperti opsi jawaban) - hanya muncul jika ada formula */}
+      {value && value.trim() !== "" && hasFormula() && (
+        <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+          <p className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-2">
+            <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+            Preview Hasil Render:
+          </p>
+          <div className="text-sm text-slate-700 bg-white p-3 rounded-lg border border-green-100">
+            <MathText text={plainText} />
+          </div>
+          <p className="text-xs text-green-600 mt-2 italic">✓ Formula matematika akan tampil seperti ini di halaman siswa</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// TAB INPUT SOAL (LENGKAP)
 // ============================================================
 function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
   mapelList = mapelList || DEFAULT_MAPEL;
@@ -1078,110 +1269,112 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
   const [mapel, setMapel] = useState(mapelList[0]);
   const [asesmen, setAsesmen] = useState(asesmenList[0]);
   const [jenisSoal, setJenisSoal] = useState("Pilihan Ganda");
-  const [opsi, setOpsi] = useState(["","","",""]);
+  const [opsi, setOpsi] = useState(["", "", "", ""]);
   const [jawabanBenar, setJawabanBenar] = useState([]);
   const [jawabanReferensi, setJawabanReferensi] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   const handleGantiJenis = j => {
     setJenisSoal(j);
-    if (j === "Benar/Salah Kompleks") setOpsi(["","",""]);
+    if (j === "Benar/Salah Kompleks") setOpsi(["", "", ""]);
     else if (j === "Uraian/Esai") setOpsi([]);
-    else setOpsi(["","","",""]);
+    else setOpsi(["", "", "", ""]);
     setJawabanBenar([]);
     setJawabanReferensi("");
-    // Reset point ke 10 jika bukan esai, ke 0 jika esai
     if (j === "Uraian/Esai") setPoint(0);
     else setPoint(10);
   };
-  
-  const handleOpsiChange = (i, v) => { const a=[...opsi]; a[i]=v; setOpsi(a); };
-  const handleAddOpsi = () => setOpsi([...opsi,""]);
-  const handleRemoveOpsi = i => { setOpsi(opsi.filter((_,idx)=>idx!==i)); setJawabanBenar(jawabanBenar.filter(j=>j!==opsi[i])); };
+
+  const handleOpsiChange = (i, v) => { const a = [...opsi]; a[i] = v; setOpsi(a); };
+  const handleAddOpsi = () => setOpsi([...opsi, ""]);
+  const handleRemoveOpsi = i => { setOpsi(opsi.filter((_, idx) => idx !== i)); setJawabanBenar(jawabanBenar.filter(j => j !== opsi[i])); };
   const handleJawabanPG = v => setJawabanBenar([v]);
-  const handleJawabanPGK = v => setJawabanBenar(p=>p.includes(v)?p.filter(x=>x!==v):[...p,v]);
-  const handleJawabanBS = (idx, val) => { const arr=[...(jawabanBenar.length===opsi.length?jawabanBenar:opsi.map(()=>""))]; arr[idx]=val; setJawabanBenar(arr); };
+  const handleJawabanPGK = v => setJawabanBenar(p => p.includes(v) ? p.filter(x => x !== v) : [...p, v]);
+  const handleJawabanBS = (idx, val) => { const arr = [...(jawabanBenar.length === opsi.length ? jawabanBenar : opsi.map(() => ""))]; arr[idx] = val; setJawabanBenar(arr); };
   
   const handleOpsiPaste = (e, startIdx) => {
     const text = e.clipboardData.getData("text");
-    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
-    if (lines.length<=1) return;
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length <= 1) return;
     e.preventDefault();
-    const newOpsi=[...opsi];
-    lines.forEach((line,i)=>{ const idx=startIdx+i; if(idx<newOpsi.length) newOpsi[idx]=line; else newOpsi.push(line); });
+    const newOpsi = [...opsi];
+    lines.forEach((line, i) => {
+      const idx = startIdx + i;
+      if (idx < newOpsi.length) newOpsi[idx] = line;
+      else newOpsi.push(line);
+    });
     setOpsi(newOpsi);
     addToast(`✅ ${lines.length} opsi di-paste sekaligus!`, "success");
   };
-  
+
   const handleSubmit = async () => {
     if (!soal.trim()) return addToast("Soal tidak boleh kosong!", "error");
     
-    // Validasi point hanya untuk soal non-esai
     if (jenisSoal !== "Uraian/Esai") {
       if (!point || isNaN(point) || point <= 0) return addToast("Point harus diisi dengan angka positif!", "error");
     }
     
     if (jenisSoal !== "Uraian/Esai") {
-      if (opsi.filter(o=>o.trim()).length < 2) return addToast("Minimal 2 opsi!", "error");
+      if (opsi.filter(o => o.trim()).length < 2) return addToast("Minimal 2 opsi!", "error");
       if (jawabanBenar.length === 0) return addToast("Pilih jawaban benar!", "error");
     }
     
-    const payload = { 
-      action:"tambahSoal", 
-      mapel, asesmen, soal, gambar, jenisSoal, 
-      opsi: jenisSoal==="Uraian/Esai" ? "[]" : JSON.stringify(opsi.filter(o=>o.trim())), 
-      jawabanBenar: jenisSoal==="Uraian/Esai" ? "[]" : JSON.stringify(jawabanBenar), 
-      jawabanReferensi: jenisSoal==="Uraian/Esai" ? jawabanReferensi : "", 
-      point: jenisSoal==="Uraian/Esai" ? 0 : Number(point)  // point 0 untuk esai
+    const payload = {
+      action: "tambahSoal",
+      mapel, asesmen, soal, gambar, jenisSoal,
+      opsi: jenisSoal === "Uraian/Esai" ? "[]" : JSON.stringify(opsi.filter(o => o.trim())),
+      jawabanBenar: jenisSoal === "Uraian/Esai" ? "[]" : JSON.stringify(jawabanBenar),
+      jawabanReferensi: jenisSoal === "Uraian/Esai" ? jawabanReferensi : "",
+      point: jenisSoal === "Uraian/Esai" ? 0 : Number(point)
     };
     
     setLoading(true);
     try {
       const url = scriptUrl || APPS_SCRIPT_URL;
-      const r = await fetch(url, { method:"POST", body:JSON.stringify(payload) });
+      const r = await fetch(url, { method: "POST", body: JSON.stringify(payload) });
       const d = await r.json();
-      if (d.status==="success") { 
-        addToast("Soal berhasil disimpan! ✅","success"); 
-        setSoal(""); 
-        setGambar(""); 
-        setOpsi(["","","",""]); 
-        setJawabanBenar([]); 
-        setJawabanReferensi(""); 
+      if (d.status === "success") {
+        addToast("Soal berhasil disimpan! ✅", "success");
+        setSoal("");
+        setGambar("");
+        setOpsi(["", "", "", ""]);
+        setJawabanBenar([]);
+        setJawabanReferensi("");
         setShowPreview(false);
         if (jenisSoal !== "Uraian/Esai") setPoint(10);
         else setPoint(0);
-      } else addToast(d.message||"Gagal menyimpan","error");
-    } catch { addToast("Mode Demo: Belum terhubung ke Apps Script","warning"); } 
+      } else addToast(d.message || "Gagal menyimpan", "error");
+    } catch { addToast("Mode Demo: Belum terhubung ke Apps Script", "warning"); }
     finally { setLoading(false); }
   };
-  
+
   const isMath = isMapelMath(mapel);
-  
+
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-xl font-extrabold text-slate-800">Input Soal</h2>
-        <p className="text-sm text-slate-500">Tambahkan soal ke bank soal</p>
+        <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Input Soal</h2>
+        <p className="text-sm text-slate-500">Tambahkan soal ke bank soal. Gunakan toolbar untuk format teks dan rumus matematika.</p>
       </div>
       
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+      <div className="bg-white p-6 space-y-5" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #CC0000", borderRadius: "0" }}>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Mata Pelajaran">
-            <select value={mapel} onChange={e=>setMapel(e.target.value)} className={inp}>
-              {mapelList.map(m=><option key={m}>{m}</option>)}
+            <select value={mapel} onChange={e => setMapel(e.target.value)} className={inp}>
+              {mapelList.map(m => <option key={m}>{m}</option>)}
             </select>
           </Field>
           <Field label="Jenis Asesmen">
-            <select value={asesmen} onChange={e=>setAsesmen(e.target.value)} className={inp}>
-              {asesmenList.map(a=><option key={a}>{a}</option>)}
+            <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className={inp}>
+              {asesmenList.map(a => <option key={a}>{a}</option>)}
             </select>
           </Field>
         </div>
         
         <div className="grid grid-cols-2 gap-3">
           <Field label="Jenis Soal">
-            <select value={jenisSoal} onChange={e=>handleGantiJenis(e.target.value)} className={inp}>
-              {JENIS_SOAL_LENGKAP.map(j=><option key={j}>{j}</option>)}
+            <select value={jenisSoal} onChange={e => handleGantiJenis(e.target.value)} className={inp}>
+              {JENIS_SOAL_LENGKAP.map(j => <option key={j}>{j}</option>)}
             </select>
           </Field>
           <Field label="Point/Nilai">
@@ -1199,13 +1392,11 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
           </Field>
         </div>
         
-        <Field label={`Pertanyaan${isMath?" ∑ Formula aktif":""}`}>
-          <MathInput 
+        <Field label="Pertanyaan">
+          <RichTextEditor 
             value={soal} 
-            onChange={e=>setSoal(e.target.value)} 
-            rows={4} 
-            placeholder={isMath?"Tulis soal... Gunakan $formula$ untuk math":"Tulis soal di sini..."} 
-            showToolbar={isMath} 
+            onChange={setSoal} 
+            placeholder="Tulis soal di sini... Gunakan toolbar untuk bold, list, atau formula $$rumus$$"
           />
         </Field>
         
@@ -1214,11 +1405,11 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
             <input 
               type="url" 
               value={gambar} 
-              onChange={e=>{setGambar(e.target.value);setShowPreview(false);}} 
+              onChange={e => { setGambar(e.target.value); setShowPreview(false); }} 
               placeholder="https://drive.google.com/file/d/..." 
               className={inp + " flex-1"} 
             />
-            {gambar && <button onClick={()=>setShowPreview(v=>!v)} className={btn("slate")}>{showPreview?"Tutup":"👁 Preview"}</button>}
+            {gambar && <button onClick={() => setShowPreview(v => !v)} className={btn("slate")}>{showPreview ? "Tutup" : "👁 Preview"}</button>}
           </div>
           {showPreview && gambar && <div className="mt-2 overflow-hidden rounded-xl"><GambarSoal url={gambar} /></div>}
         </Field>
@@ -1231,41 +1422,41 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
                 <p className="text-xs font-semibold text-slate-600">Opsi Jawaban</p>
                 <p className="text-xs text-blue-500">💡 Ctrl+V di Opsi A untuk paste banyak sekaligus</p>
               </div>
-              <button onClick={handleAddOpsi} className="text-xs bg-blue-100 text-blue-600 px-3 py-1 rounded-lg hover:bg-blue-200 font-medium">+ Tambah Opsi</button>
+              <button onClick={handleAddOpsi} className="text-xs px-3 py-1 font-medium" style={{ background: "#eff6ff", color: "#003082", borderRadius: "0", border: "1px solid #93c5fd" }}>+ Tambah Opsi</button>
             </div>
             <div className="space-y-2">
               {opsi.map((o, i) => (
                 <div key={i} className="flex items-start gap-2">
-                  <span className="w-7 h-7 rounded-full bg-slate-200 text-slate-600 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-2">
-                    {String.fromCharCode(65+i)}
+                  <span className="w-7 h-7 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-2" style={{ background: "#003082", color: "#fff", borderRadius: "0" }}>
+                    {String.fromCharCode(65 + i)}
                   </span>
                   <div className="flex-1">
                     <MathInput 
                       value={o} 
-                      onChange={e=>handleOpsiChange(i,e.target.value)} 
-                      onPaste={e=>handleOpsiPaste(e,i)} 
+                      onChange={e => handleOpsiChange(i, e.target.value)} 
+                      onPaste={e => handleOpsiPaste(e, i)} 
                       rows={1} 
-                      placeholder={`Opsi ${String.fromCharCode(65+i)}`} 
-                      showToolbar={false} 
+                      placeholder={`Opsi ${String.fromCharCode(65 + i)}`} 
+                      showToolbar={isMath} 
                     />
                     {isMath && o && o.includes("$") && 
                       <div className="mt-0.5 px-2 py-1 bg-slate-50 rounded-lg text-xs"><MathText text={o} /></div>
                     }
                   </div>
                   {jenisSoal === "Pilihan Ganda" && 
-                    <input type="radio" name="pg" checked={jawabanBenar[0]===o} onChange={()=>handleJawabanPG(o)} className="w-4 h-4 mt-2.5" />
+                    <input type="radio" name="pg" checked={jawabanBenar[0] === o} onChange={() => handleJawabanPG(o)} className="w-4 h-4 mt-2.5" />
                   }
                   {jenisSoal === "Pilihan Ganda Kompleks" && 
-                    <input type="checkbox" checked={jawabanBenar.includes(o)} onChange={()=>handleJawabanPGK(o)} className="w-4 h-4 mt-2.5" />
+                    <input type="checkbox" checked={jawabanBenar.includes(o)} onChange={() => handleJawabanPGK(o)} className="w-4 h-4 mt-2.5" />
                   }
                   {jenisSoal === "Benar/Salah Kompleks" && (
                     <div className="flex gap-1 flex-shrink-0 mt-1.5">
-                      <button onClick={()=>handleJawabanBS(i,"Benar")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Benar"?"bg-green-500 text-white":"bg-slate-100 text-slate-600"}`}>B</button>
-                      <button onClick={()=>handleJawabanBS(i,"Salah")} className={`text-xs px-2 py-1 rounded-lg font-bold ${jawabanBenar[i]==="Salah"?"bg-red-500 text-white":"bg-slate-100 text-slate-600"}`}>S</button>
+                      <button onClick={() => handleJawabanBS(i, "Benar")} className={`text-xs px-2 py-1 font-bold`} style={{ background: jawabanBenar[i] === "Benar" ? "#16a34a" : "#e2e8f0", color: jawabanBenar[i] === "Benar" ? "#fff" : "#475569", borderRadius: "0" }}>B</button>
+                      <button onClick={() => handleJawabanBS(i, "Salah")} className={`text-xs px-2 py-1 font-bold`} style={{ background: jawabanBenar[i] === "Salah" ? "#CC0000" : "#e2e8f0", color: jawabanBenar[i] === "Salah" ? "#fff" : "#475569", borderRadius: "0" }}>S</button>
                     </div>
                   )}
                   {opsi.length > 2 && 
-                    <button onClick={()=>handleRemoveOpsi(i)} className="text-red-400 hover:text-red-600 text-xl mt-1.5">×</button>
+                    <button onClick={() => handleRemoveOpsi(i)} className="text-red-400 hover:text-red-600 text-xl mt-1.5">×</button>
                   }
                 </div>
               ))}
@@ -1278,7 +1469,7 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
           <Field label="Kunci Jawaban Referensi (opsional)" hint="Membantu guru saat mengoreksi. Tidak ditampilkan ke siswa.">
             <textarea 
               value={jawabanReferensi} 
-              onChange={e=>setJawabanReferensi(e.target.value)} 
+              onChange={e => setJawabanReferensi(e.target.value)} 
               rows={3} 
               placeholder="Tuliskan jawaban ideal/kata kunci sebagai referensi koreksi..." 
               className={inp + " resize-none"} 
@@ -1464,12 +1655,18 @@ const saveBobot = async () => {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h2 className="text-xl font-extrabold text-slate-800">Rekap Hasil Ujian</h2><p className="text-sm text-slate-500">{filtered.length} data ditampilkan</p></div>
-        <div className="flex gap-2 flex-wrap"><button onClick={() => fetchHasil(filterMapel)} className={btn("slate")}>🔄 Refresh</button><button onClick={handleExportXLSX} disabled={exporting || filtered.length===0} className={btn("green") + " disabled:opacity-50"}>{exporting ? "Mengekspor..." : "📥 Export XLSX"}</button></div>
+        <div>
+          <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Rekap Hasil Ujian</h2>
+          <p className="text-sm text-slate-500">{filtered.length} data ditampilkan</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => fetchHasil(filterMapel)} className={btn("slate")}>🔄 Refresh</button>
+          <button onClick={handleExportXLSX} disabled={exporting || filtered.length===0} className={btn("green") + " disabled:opacity-50"}>{exporting ? "Mengekspor..." : "📥 Export XLSX"}</button>
+        </div>
       </div>
 
       {/* Bobot Settings */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-end gap-4">
+      <div className="bg-white p-4 flex flex-wrap items-end gap-4" style={{ border: "1px solid #e2e8f0", borderLeft: "4px solid #d97706", borderRadius: "0" }}>
         <div className="flex-1 min-w-[120px]">
           <label className="text-xs font-semibold text-slate-600 block mb-1">Bobot Nilai Objektif (%)</label>
           <input type="number" min={0} max={100} value={bobotObj} onChange={e => setBobotObj(Math.min(100, Math.max(0, Number(e.target.value))))} className={inp + " w-28"} />
@@ -1489,9 +1686,9 @@ const saveBobot = async () => {
       </div>
       {loading ? <div className="text-center py-10 text-slate-400"><div className="w-8 h-8 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" />Memuat data hasil ujian...</div>
       : filtered.length === 0 ? <div className="text-center py-10 text-slate-400">{hasil.length===0 ? "Belum ada hasil ujian." : "Tidak ada data yang cocok dengan filter."}</div>
-      : <div className="overflow-x-auto rounded-2xl border border-slate-200">
+      : <div className="overflow-x-auto" style={{ border: "1px solid #e2e8f0", borderRadius: "0" }}>
           <table className="w-full text-xs">
-            <thead><tr className="bg-slate-800 text-white"><th className="px-3 py-3 text-left">Waktu</th><th className="px-3 py-3 text-left">NISN</th><th className="px-3 py-3 text-left">Nama</th><th className="px-3 py-3 text-left">Mapel</th><th className="px-3 py-3 text-left">Asesmen</th><th className="px-3 py-3 text-center">Skor Obj.</th><th className="px-3 py-3 text-center">Skor Esai</th><th className="px-3 py-3 text-center">Nilai Akhir</th><th className="px-3 py-3 text-center">Keterangan</th><th className="px-3 py-3 text-center">Aksi</th></tr></thead>
+            <thead><tr style={{ background: "#003082" }} className="text-white"><th className="px-3 py-3 text-left">Waktu</th><th className="px-3 py-3 text-left">NISN</th><th className="px-3 py-3 text-left">Nama</th><th className="px-3 py-3 text-left">Mapel</th><th className="px-3 py-3 text-left">Asesmen</th><th className="px-3 py-3 text-center">Skor Obj.</th><th className="px-3 py-3 text-center">Skor Esai</th><th className="px-3 py-3 text-center">Nilai Akhir</th><th className="px-3 py-3 text-center">Keterangan</th><th className="px-3 py-3 text-center">Aksi</th></tr></thead>
             <tbody>{filtered.map((h, i) => {
               const nilaiAkhir = hitungNilaiAkhir(h);
               const sudahKoreksi = h.skorEsai !== undefined && h.skorEsai !== "";
@@ -1499,17 +1696,17 @@ const saveBobot = async () => {
               const kkm = getKKMForMapel(h.mapel);
               const keterangan = nilaiAkhir >= kkm ? "Tuntas" : "Belum Tuntas";
               return (
-                <tr key={i} className={i%2===0?"bg-white":"bg-slate-50"}>
+                <tr key={i} style={{ background: i%2===0 ? "#fff" : "#f8fafc" }}>
                   <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{h.waktu}</td>
                   <td className="px-3 py-2.5 font-mono">{h.nisn}</td>
                   <td className="px-3 py-2.5 font-medium">{h.nama}</td>
                   <td className="px-3 py-2.5">{h.mapel}</td>
                   <td className="px-3 py-2.5">{h.asesmen}</td>
-                  <td className="px-3 py-2.5 text-center font-bold text-blue-700">{h.skorObjektif ?? "-"}</td>
-                  <td className="px-3 py-2.5 text-center">{!adaEsai ? <span className="text-slate-300">—</span> : sudahKoreksi ? <span className="font-bold text-green-600">{h.skorEsai}</span> : <span className="text-amber-600 font-bold">Belum</span>}</td>
-                  <td className="px-3 py-2.5 text-center"><span className={`font-extrabold text-sm ${nilaiAkhir>=kkm?"text-green-600":nilaiAkhir>=60?"text-amber-600":"text-red-500"}`}>{nilaiAkhir}</span></td>
-                  <td className="px-3 py-2.5 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${keterangan==="Tuntas"?"bg-green-100 text-green-700":"bg-red-100 text-red-600"}`}>{keterangan}</span></td>
-                  <td className="px-3 py-2.5 text-center">{adaEsai && <button onClick={() => { setModalKoreksi(h); setSkorPerSoal({}); }} className={`text-xs font-bold px-2 py-1 rounded-lg ${sudahKoreksi?"bg-green-100 text-green-700 hover:bg-green-200":"bg-amber-100 text-amber-700 hover:bg-amber-200"}`}>{sudahKoreksi ? "✏️ Edit" : "📝 Koreksi"}</button>}</td>
+                  <td className="px-3 py-2.5 text-center font-bold" style={{ color: "#003082" }}>{h.skorObjektif ?? "-"}</td>
+                  <td className="px-3 py-2.5 text-center">{!adaEsai ? <span className="text-slate-300">—</span> : sudahKoreksi ? <span className="font-bold text-green-600">{h.skorEsai}</span> : <span className="font-bold" style={{ color: "#b45309" }}>Belum</span>}</td>
+                  <td className="px-3 py-2.5 text-center"><span className="font-black text-sm" style={{ color: nilaiAkhir>=kkm ? "#15803d" : nilaiAkhir>=60 ? "#b45309" : "#CC0000" }}>{nilaiAkhir}</span></td>
+                  <td className="px-3 py-2.5 text-center"><span className="px-2 py-0.5 text-xs font-bold" style={{ background: keterangan==="Tuntas" ? "#f0fdf4" : "#fef2f2", color: keterangan==="Tuntas" ? "#15803d" : "#CC0000", border: `1px solid ${keterangan==="Tuntas" ? "#86efac" : "#fca5a5"}`, borderRadius: "0" }}>{keterangan}</span></td>
+                  <td className="px-3 py-2.5 text-center">{adaEsai && <button onClick={() => { setModalKoreksi(h); setSkorPerSoal({}); }} className="text-xs font-bold px-2 py-1" style={{ background: sudahKoreksi ? "#f0fdf4" : "#fff7ed", color: sudahKoreksi ? "#15803d" : "#b45309", borderRadius: "0", border: `1px solid ${sudahKoreksi ? "#86efac" : "#fcd34d"}` }}>{sudahKoreksi ? "✏️ Edit" : "📝 Koreksi"}</button>}</td>
                 </tr>
               );
             })}</tbody>
@@ -1518,28 +1715,31 @@ const saveBobot = async () => {
       }
       {modalKoreksi && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e=>{ if(e.target===e.currentTarget) setModalKoreksi(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
-              <div><h3 className="font-extrabold text-slate-800">📝 Koreksi Esai</h3><p className="text-xs text-slate-500">{modalKoreksi.nama} — {modalKoreksi.mapel} / {modalKoreksi.asesmen}</p></div>
+          <div className="bg-white shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" style={{ border: "2px solid #003082", borderRadius: "0" }}>
+            <div className="sticky top-0 bg-white px-6 py-4 flex items-center justify-between" style={{ borderBottom: "3px solid #CC0000" }}>
+              <div>
+                <h3 className="font-black uppercase tracking-wide" style={{ color: "#003082" }}>📝 Koreksi Esai</h3>
+                <p className="text-xs text-slate-500">{modalKoreksi.nama} — {modalKoreksi.mapel} / {modalKoreksi.asesmen}</p>
+              </div>
               <button onClick={() => setModalKoreksi(null)} className="text-slate-400 hover:text-slate-600 text-2xl">×</button>
             </div>
             <div className="p-6 space-y-5">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-xs font-bold text-amber-800 mb-2">Jawaban Esai Siswa</p>
+              <div className="p-4" style={{ background: "#fff7ed", border: "1px solid #fcd34d", borderLeft: "4px solid #d97706", borderRadius: "0" }}>
+                <p className="text-xs font-bold mb-2 uppercase tracking-wide" style={{ color: "#b45309" }}>Jawaban Esai Siswa</p>
                 {(() => {
                   let jawabanEsaiList = [];
                   try { jawabanEsaiList = JSON.parse(modalKoreksi.jawabanEsai || "[]"); } catch(e) { jawabanEsaiList = []; }
-                  if (jawabanEsaiList.length === 0) return <p className="text-xs text-amber-700">Tidak ada jawaban esai.</p>;
+                  if (jawabanEsaiList.length === 0) return <p className="text-xs" style={{ color: "#b45309" }}>Tidak ada jawaban esai.</p>;
                   return (
                     <div className="space-y-3">
                       {jawabanEsaiList.map((je, idx) => (
-                        <div key={idx} className="bg-white rounded-xl p-3 border border-amber-200 space-y-2">
+                        <div key={idx} className="bg-white p-3 space-y-2" style={{ border: "1px solid #fcd34d", borderRadius: "0" }}>
                           <p className="text-xs font-semibold text-slate-700">Soal {idx+1}: {je.soal}</p>
                           {je.referensi && <p className="text-xs text-slate-400 italic">Referensi: {je.referensi}</p>}
-                          <p className="text-sm text-slate-800 bg-amber-50 p-2 rounded-lg">{je.jawaban || "(tidak dijawab)"}</p>
+                          <p className="text-sm text-slate-800 p-2" style={{ background: "#fff7ed", borderRadius: "0" }}>{je.jawaban || "(tidak dijawab)"}</p>
                           <div className="flex items-center gap-3">
                             <label className="text-xs font-bold text-slate-600">Skor (0–100):</label>
-                            <input type="number" min={0} max={100} value={skorPerSoal[idx]??""} onChange={e=>setSkorPerSoal(p=>({...p,[idx]:e.target.value}))} className="w-20 border-2 border-amber-300 rounded-lg px-2 py-1 text-center font-bold text-amber-800" />
+                            <input type="number" min={0} max={100} value={skorPerSoal[idx]??""} onChange={e=>setSkorPerSoal(p=>({...p,[idx]:e.target.value}))} className="w-20 border-2 border-amber-300 px-2 py-1 text-center font-bold text-amber-800" style={{ borderRadius: "0" }} />
                           </div>
                         </div>
                       ))}
@@ -1636,18 +1836,21 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
 
   return (
     <div className="space-y-5">
-      <div><h2 className="text-xl font-extrabold text-slate-800">Pengaturan Ujian</h2><p className="text-sm text-slate-500">Identitas sekolah, durasi, dan koneksi spreadsheet</p></div>
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+      <div>
+        <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Pengaturan Ujian</h2>
+        <p className="text-sm text-slate-500">Identitas sekolah, durasi, dan koneksi spreadsheet</p>
+      </div>
+      <div className="bg-white p-6 space-y-5" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #003082", borderRadius: "0" }}>
         {/* Logo Sekolah */}
         <Field label="URL Logo Sekolah" hint="💡 Google Drive: Upload → Bagikan → 'Siapa saja yang memiliki link' → Salin link">
           <input value={logoInput} onChange={e=>setLogoInput(e.target.value)} placeholder="https://drive.google.com/file/d/..." className={inp} />
           {logoInput && (
             <div className="mt-2 flex items-center gap-3">
-              <div className="flex items-center justify-center bg-slate-50 border border-slate-200 rounded-lg p-2" style={{minWidth:"64px"}}>
+              <div className="flex items-center justify-center p-2" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", minWidth: "64px" }}>
                 <LogoSekolah url={logoInput} className="max-h-14 max-w-16 object-contain" />
               </div>
               <div className="text-xs text-slate-500">
-                {isDriveUrl(logoInput) ? (extractDriveFileId(logoInput)?<p className="text-green-600">✓ File ID terdeteksi</p>:<p className="text-red-500">✗ Format URL Drive tidak dikenali</p>) : <p className="text-blue-600">✓ URL gambar biasa</p>}
+                {isDriveUrl(logoInput) ? (extractDriveFileId(logoInput)?<p className="text-green-600">✓ File ID terdeteksi</p>:<p style={{ color: "#CC0000" }}>✗ Format URL Drive tidak dikenali</p>) : <p style={{ color: "#003082" }}>✓ URL gambar biasa</p>}
               </div>
             </div>
           )}
@@ -1667,21 +1870,21 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex-shrink-0">
               {fotoGuruPreview ? (
-                <img src={fotoGuruPreview} alt="Preview Foto Guru" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500 shadow-md" />
+                <img src={fotoGuruPreview} alt="Preview Foto Guru" className="w-20 h-20 rounded-full object-cover shadow-md" style={{ border: "3px solid #CC0000" }} />
               ) : settings.fotoGuru ? (
-                <img src={settings.fotoGuru} alt="Foto Guru" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500 shadow-md" onError={(e) => { e.target.onerror = null; e.target.src = ""; }} />
+                <img src={settings.fotoGuru} alt="Foto Guru" className="w-20 h-20 rounded-full object-cover shadow-md" style={{ border: "3px solid #CC0000" }} onError={(e) => { e.target.onerror = null; e.target.src = ""; }} />
               ) : (
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-2xl font-bold shadow-md">
+                <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-md" style={{ background: "linear-gradient(135deg,#CC0000,#003082)" }}>
                   {getInitials()}
                 </div>
               )}
             </div>
             <div className="flex-1 min-w-[200px]">
-              <input type="file" accept="image/jpeg,image/png,image/jpg" onChange={handleFotoUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+              <input type="file" accept="image/jpeg,image/png,image/jpg" onChange={handleFotoUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-sm file:font-semibold" style={{ "--file-bg": "#eff6ff", "--file-color": "#003082" }} />
               <p className="text-xs text-slate-400 mt-1">Maksimal 2MB, format JPG/PNG</p>
             </div>
             {(fotoGuruPreview || settings.fotoGuru) && (
-              <button type="button" onClick={handleHapusFoto} className="text-red-500 hover:text-red-700 text-sm px-3 py-1 rounded-lg border border-red-200 hover:bg-red-50">Hapus</button>
+              <button type="button" onClick={handleHapusFoto} className="text-sm px-3 py-1" style={{ color: "#CC0000", border: "1px solid #fca5a5", borderRadius: "0" }}>Hapus</button>
             )}
           </div>
         </Field>
@@ -1690,11 +1893,11 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
         <Field label="Kota Penandatangan"><input value={kotaTTDInput} onChange={e=>setKotaTTDInput(e.target.value)} placeholder="Sumenep" className={inp} /></Field>
         
         {/* Durasi */}
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2"><span className="text-xl">⏱️</span><h4 className="font-bold text-amber-900 text-sm">Durasi Waktu Ujian</h4></div>
-          <div className="flex items-center gap-3"><input type="number" value={durasiInput} onChange={e=>setDurasiInput(e.target.value)} min={1} max={300} className="w-24 border-2 border-amber-300 focus:border-amber-500 rounded-xl px-3 py-3 text-center font-extrabold text-2xl text-amber-800 focus:outline-none bg-white" /><div><p className="text-sm font-bold text-amber-800">menit</p><p className="text-xs text-amber-600">= {durasiDisplay}</p></div></div>
+        <div className="p-5 space-y-3" style={{ background: "#fff7ed", border: "1px solid #fcd34d", borderLeft: "4px solid #d97706", borderRadius: "0" }}>
+          <div className="flex items-center gap-2"><span className="text-xl">⏱️</span><h4 className="font-bold text-sm" style={{ color: "#92400e" }}>Durasi Waktu Ujian</h4></div>
+          <div className="flex items-center gap-3"><input type="number" value={durasiInput} onChange={e=>setDurasiInput(e.target.value)} min={1} max={300} className="w-24 border-2 px-3 py-3 text-center font-extrabold text-2xl focus:outline-none bg-white" style={{ borderColor: "#f59e0b", color: "#92400e", borderRadius: "0" }} /><div><p className="text-sm font-bold" style={{ color: "#92400e" }}>menit</p><p className="text-xs" style={{ color: "#b45309" }}>= {durasiDisplay}</p></div></div>
           <input type="range" min={10} max={180} step={5} value={durasiInput} onChange={e=>setDurasiInput(Number(e.target.value))} className="w-full accent-amber-500" />
-          <div className="flex flex-wrap gap-2">{[{l:"30 mnt",v:30},{l:"45 mnt",v:45},{l:"1 jam",v:60},{l:"1.5 jam",v:90},{l:"2 jam",v:120}].map(({l,v})=>(<button key={v} onClick={()=>setDurasiInput(v)} className={`text-xs px-3 py-2 rounded-xl font-bold ${Number(durasiInput)===v?"bg-amber-500 text-white":"bg-white text-amber-700 border border-amber-300 hover:bg-amber-100"}`}>{l}</button>))}</div>
+          <div className="flex flex-wrap gap-2">{[{l:"30 mnt",v:30},{l:"45 mnt",v:45},{l:"1 jam",v:60},{l:"1.5 jam",v:90},{l:"2 jam",v:120}].map(({l,v})=>(<button key={v} onClick={()=>setDurasiInput(v)} className="text-xs px-3 py-2 font-bold" style={{ background: Number(durasiInput)===v ? "#d97706" : "#fff", color: Number(durasiInput)===v ? "#fff" : "#b45309", border: "1px solid #fcd34d", borderRadius: "0" }}>{l}</button>))}</div>
         </div>
         
         {/* Link Spreadsheet */}
@@ -1704,10 +1907,10 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
         
         <button onClick={handleSave} disabled={saving} className={btn("blue") + " w-full py-3 text-base"}>{saving ? "Menyimpan..." : "💾 Simpan Pengaturan"}</button>
         
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 space-y-1">
-          <p className="font-bold text-blue-800">🔄 Sinkron Otomatis Antar Perangkat</p>
-          <ol className="list-decimal list-inside space-y-1"><li>Pengaturan disimpan ke sheet <strong>PENGATURAN</strong></li><li>Buka di HP/browser lain → otomatis termuat</li></ol>
-          <p className="mt-2 text-yellow-600">⚠️ Foto guru disimpan sebagai base64 di spreadsheet (ukuran besar). Untuk performa lebih baik, gunakan URL dari Google Drive.</p>
+        <div className="p-4 text-xs space-y-1" style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderLeft: "4px solid #003082", borderRadius: "0" }}>
+          <p className="font-bold uppercase tracking-wide" style={{ color: "#003082" }}>🔄 Sinkron Otomatis Antar Perangkat</p>
+          <ol className="list-decimal list-inside space-y-1" style={{ color: "#1e40af" }}><li>Pengaturan disimpan ke sheet <strong>PENGATURAN</strong></li><li>Buka di HP/browser lain → otomatis termuat</li></ol>
+          <p className="mt-2" style={{ color: "#b45309" }}>⚠️ Foto guru disimpan sebagai base64 di spreadsheet (ukuran besar). Untuk performa lebih baik, gunakan URL dari Google Drive.</p>
         </div>
       </div>
     </div>
@@ -1727,18 +1930,22 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
   ];
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      <div className="px-5 py-5 border-b border-slate-700"><p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Panel Guru</p><p className="text-white font-extrabold text-base mt-0.5">{settings.namaSekolah || "Portal Ujian"}</p></div>
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">{navItems.map(n => (<button key={n.id} onClick={() => { setActivePage(n.id); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors text-left ${activePage===n.id ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-700 hover:text-white"}`}><span className="text-lg w-6 text-center">{n.icon}</span><span>{n.label}</span></button>))}</nav>
-      <div className="px-3 py-4 border-t border-slate-700"><button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/20 hover:text-red-300"><span className="text-lg">🚪</span><span>Keluar</span></button></div>
+      <div className="px-5 py-5" style={{ borderBottom: "1px solid #1e3a8a", background: "#002266" }}>
+        <p className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: "#93c5fd" }}>Panel Guru</p>
+        <p className="font-black text-base mt-0.5 text-white" style={{ fontFamily: "'Georgia', serif" }}>{settings.namaSekolah || "Portal Ujian"}</p>
+        <div style={{ width: "40px", height: "3px", background: "#CC0000", marginTop: "8px" }} />
+      </div>
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">{navItems.map(n => (<button key={n.id} onClick={() => { setActivePage(n.id); setSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors text-left ${activePage===n.id ? "text-white" : "hover:text-white"}`} style={{ background: activePage===n.id ? "#CC0000" : "transparent", color: activePage===n.id ? "#fff" : "#93c5fd", borderRadius: "0", borderLeft: activePage===n.id ? "4px solid #fff" : "4px solid transparent" }}><span className="text-lg w-6 text-center">{n.icon}</span><span>{n.label}</span></button>))}</nav>
+      <div className="px-3 py-4" style={{ borderTop: "1px solid #1e3a8a" }}><button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors" style={{ color: "#fca5a5", borderRadius: "0" }}><span className="text-lg">🚪</span><span>Keluar</span></button></div>
     </div>
   );
   const pageProps = { scriptUrl: scriptUrl||APPS_SCRIPT_URL, addToast, settings, onSaveSettings, onSaveScriptUrl, mapelList, setMapelList, asesmenList, setAsesmenList };
   return (
-    <div className="min-h-screen bg-slate-100 flex">
-      <aside className="hidden md:flex flex-col w-60 bg-slate-800 flex-shrink-0 fixed inset-y-0 left-0 z-30"><SidebarContent /></aside>
-      {sidebarOpen && (<div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}><div className="absolute inset-0 bg-black/60" /><aside className="absolute left-0 top-0 bottom-0 w-64 bg-slate-800 flex flex-col z-50" onClick={e => e.stopPropagation()}><SidebarContent /></aside></div>)}
+    <div className="min-h-screen flex" style={{ background: "#f1f5f9" }}>
+      <aside className="hidden md:flex flex-col w-60 flex-shrink-0 fixed inset-y-0 left-0 z-30" style={{ background: "#003082" }}><SidebarContent /></aside>
+      {sidebarOpen && (<div className="fixed inset-0 z-40 md:hidden" onClick={() => setSidebarOpen(false)}><div className="absolute inset-0 bg-black/60" /><aside className="absolute left-0 top-0 bottom-0 w-64 flex flex-col z-50" style={{ background: "#003082" }} onClick={e => e.stopPropagation()}><SidebarContent /></aside></div>)}
       <div className="flex-1 md:ml-60 flex flex-col min-h-screen">
-        <header className="md:hidden bg-slate-800 text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-20"><button onClick={() => setSidebarOpen(true)} className="text-slate-300 hover:text-white p-1"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button><span className="font-bold">{navItems.find(n=>n.id===activePage)?.label}</span></header>
+        <header className="md:hidden text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-20" style={{ background: "#CC0000" }}><button onClick={() => setSidebarOpen(true)} className="text-white/80 hover:text-white p-1"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg></button><span className="font-bold uppercase tracking-wide text-sm">{navItems.find(n=>n.id===activePage)?.label}</span></header>
         <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
           {activePage==="dashboard" && <TabDashboard onNav={setActivePage} addToast={addToast} settings={settings} />}
           {activePage==="siswa" && <TabSiswa {...pageProps} />}
@@ -1755,7 +1962,7 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
 // ============================================================
 // HALAMAN SISWA (login)
 // ============================================================
-function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, asesmenList = DEFAULT_ASESMEN }) {
+function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, asesmenList = DEFAULT_ASESMEN, logoUrl }) {
   const [nisn, setNisn] = useState("");
   const [namaLookup, setNamaLookup] = useState("");
   const [kelasLookup, setKelasLookup] = useState("");
@@ -1807,38 +2014,38 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
-      <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white text-center">
-          <div className="text-5xl mb-2">📝</div>
-          <h2 className="text-xl font-extrabold">Asesmen Sumatif</h2>
-          <p className="text-blue-200 text-sm mt-1">Masukkan NISN dan token ujian</p>
+      <div className="bg-white shadow-xl overflow-hidden" style={{ border: "2px solid #003082", borderRadius: "0" }}>
+        <div className="p-6 text-white text-center" style={{ background: "linear-gradient(135deg, #CC0000 0%, #8B0000 100%)", borderBottom: "4px solid #003082" }}>
+          <h2 className="text-xl font-black uppercase tracking-widest" style={{ fontFamily: "'Georgia', serif" }}>Asesmen Sumatif</h2>
+          <p className="text-red-200 text-xs mt-1 uppercase tracking-[0.15em]">Masukkan NISN dan token ujian</p>
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">🎫 NISN</label>
+            <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>🎫 NISN</label>
             <input
               type="text"
               value={nisn}
               onChange={e => handleNisnChange(e.target.value)}
               placeholder="Masukkan NISN kamu..."
-              className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 font-mono tracking-wider"
+              className="w-full px-4 py-3 text-sm font-mono tracking-wider focus:outline-none"
+              style={{ border: "2px solid #003082", borderRadius: "0" }}
             />
             {lookupStatus === "loading" && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-blue-500">
-                <div className="w-3 h-3 border-2 border-blue-300 border-t-blue-500 rounded-full animate-spin"></div>
+              <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: "#CC0000" }}>
+                <div className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#CC0000", borderTopColor: "transparent" }}></div>
                 Mencari data siswa...
               </div>
             )}
             {lookupStatus === "found" && (
-              <div className="mt-2 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                <p className="text-xs text-green-600 font-semibold mb-0.5">✓ Siswa ditemukan</p>
+              <div className="mt-2 px-4 py-3" style={{ background: "#f0fdf4", border: "1px solid #16a34a", borderRadius: "0" }}>
+                <p className="text-xs text-green-600 font-bold mb-0.5 uppercase">✓ Siswa ditemukan</p>
                 <p className="text-sm font-extrabold text-green-800">{namaLookup}</p>
                 {kelasLookup && <p className="text-xs text-green-600">Kelas: {kelasLookup}</p>}
               </div>
             )}
             {lookupStatus === "notfound" && nisn.trim().length >= 4 && (
-              <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-                <p className="text-xs text-red-600 font-semibold">✗ NISN tidak ditemukan</p>
+              <div className="mt-2 px-4 py-3" style={{ background: "#fef2f2", border: "1px solid #CC0000", borderRadius: "0" }}>
+                <p className="text-xs font-bold uppercase" style={{ color: "#CC0000" }}>✗ NISN tidak ditemukan</p>
                 <p className="text-xs text-red-500">Pastikan NISN benar atau hubungi guru untuk didaftarkan.</p>
               </div>
             )}
@@ -1846,30 +2053,30 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">📚 Mata Pelajaran</label>
-              <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-blue-500">
+              <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>📚 Mata Pelajaran</label>
+              <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full px-3 py-3 text-sm focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0" }}>
                 {mapelList.map(m => <option key={m}>{m}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1">📋 Asesmen</label>
-              <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-blue-500">
+              <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>📋 Asesmen</label>
+              <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full px-3 py-3 text-sm focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0" }}>
                 {asesmenList.map(a => <option key={a}>{a}</option>)}
               </select>
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">🔑 Token Ujian</label>
-            <input value={token} onChange={e => setToken(e.target.value.toUpperCase())} placeholder="Tanya gurumu..." className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest font-mono font-bold text-blue-700" />
+            <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>🔑 Token Ujian</label>
+            <input value={token} onChange={e => setToken(e.target.value.toUpperCase())} placeholder="Tanya gurumu..." className="w-full px-4 py-3 text-sm uppercase tracking-widest font-mono font-bold focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0", color: "#CC0000" }} />
           </div>
 
-          {err && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium text-center">{err}</div>}
+          {err && <div className="px-4 py-3 text-sm font-bold text-center uppercase" style={{ background: "#fef2f2", border: "1px solid #CC0000", color: "#CC0000", borderRadius: "0" }}>{err}</div>}
 
-          <button onClick={handle} disabled={lookupStatus === "loading" || !nisn.trim()} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold py-4 rounded-2xl text-base transition-all shadow-lg active:scale-95 disabled:opacity-50">
+          <button onClick={handle} disabled={lookupStatus === "loading" || !nisn.trim()} className="w-full text-white font-black py-4 text-sm uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50" style={{ background: "linear-gradient(135deg, #CC0000, #990000)", borderRadius: "0", letterSpacing: "0.2em" }}>
             🚀 Mulai Ujian
           </button>
-          <button onClick={onGuruMode} className="w-full text-slate-400 hover:text-slate-600 text-xs py-2 transition-colors">
+          <button onClick={onGuruMode} className="w-full text-xs py-2 transition-colors" style={{ color: "#003082" }}>
             Mode Guru 🔐
           </button>
           <p className="text-center text-xs text-slate-400 pt-2 border-t border-slate-100">
@@ -1882,7 +2089,84 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
 }
 
 // ============================================================
-// HALAMAN UJIAN
+// Render HTML dengan dukungan KaTeX
+// ============================================================
+function RenderHTML({ html, className = "" }) {
+  const containerRef = useRef(null);
+  const [ready, setReady] = useState(!!window.katex);
+
+  useEffect(() => {
+    if (!window.katex) {
+      loadKatex().then(() => setReady(true)).catch(() => setReady(false));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !containerRef.current || !html) return;
+    
+    const renderMathInElement = (element) => {
+      if (!window.katex) return;
+      const walker = document.createTreeWalker(
+        element,
+        NodeFilter.SHOW_TEXT,
+        {
+          acceptNode: (node) => {
+            if (node.parentElement?.closest?.(".katex")) return NodeFilter.FILTER_REJECT;
+            if (/\$[^$]+\$/.test(node.textContent)) return NodeFilter.FILTER_ACCEPT;
+            return NodeFilter.FILTER_SKIP;
+          }
+        }
+      );
+      const nodesToReplace = [];
+      while (walker.nextNode()) nodesToReplace.push(walker.currentNode);
+      
+      nodesToReplace.forEach(textNode => {
+        const text = textNode.textContent;
+        const regex = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+        let lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+          if (match.index > lastIndex) {
+            fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+          }
+          const formula = match[1] || match[2];
+          const isBlock = !!match[1];
+          try {
+            const span = document.createElement("span");
+            span.innerHTML = window.katex.renderToString(formula, {
+              displayMode: isBlock,
+              throwOnError: false
+            });
+            fragment.appendChild(span);
+          } catch (e) {
+            fragment.appendChild(document.createTextNode(match[0]));
+          }
+          lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < text.length) {
+          fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+        textNode.parentNode.replaceChild(fragment, textNode);
+      });
+    };
+    
+    renderMathInElement(containerRef.current);
+  }, [html, ready]);
+
+  if (!html) return null;
+  
+  return (
+    <div 
+      ref={containerRef}
+      className={`prose prose-sm max-w-none ${className}`}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+// ============================================================
+// HALAMAN UJIAN (HalamanUjian)
 // ============================================================
 function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, namaGuru, nipGuru, kotaTTD, namaSekolah }) {
   const [soalList, setSoalList] = useState([]);
@@ -1891,6 +2175,7 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
   const [jawaban, setJawaban] = useState({});
   const [tabViolation, setTabViolation] = useState(0);
   const [diskualifikasi, setDiskualifikasi] = useState(false);
+  const [diskualifikasiAlasan, setDiskualifikasiAlasan] = useState("tab");
   const durasiDetik = (Number(durasiMenit) || 60) * 60;
   const [waktu, setWaktu] = useState(durasiDetik);
   const [submitted, setSubmitted] = useState(false);
@@ -1898,6 +2183,11 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
   const timerRef = useRef(null);
   const MAX_VIOLATION = 3;
 
+  const [showKonfirmasi, setShowKonfirmasi] = useState(true);
+  const [ujianDimulai, setUjianDimulai] = useState(false);
+  const violationCountRef = useRef(0);
+
+  // Fetch soal dari server
   useEffect(() => {
     const fetchSoal = async () => {
       setLoading(true);
@@ -1919,24 +2209,97 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
     fetchSoal();
   }, []);
 
+  // Timer ujian
   useEffect(() => {
-    if (submitted || diskualifikasi) return;
-    timerRef.current = setInterval(() => { setWaktu(t => { if (t <= 1) { clearInterval(timerRef.current); handleSubmit(true); return 0; } return t - 1; }); }, 1000);
+    if (!ujianDimulai || submitted || diskualifikasi) return;
+    timerRef.current = setInterval(() => {
+      setWaktu(t => {
+        if (t <= 1) { clearInterval(timerRef.current); handleSubmit(true); return 0; }
+        return t - 1;
+      });
+    }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [submitted, diskualifikasi]);
+  }, [ujianDimulai, submitted, diskualifikasi]);
 
+  // === Wake Lock: layar tetap menyala selama ujian ===
   useEffect(() => {
-    const onVisChange = () => {
-      if (document.hidden && !submitted && !diskualifikasi) {
-        setTabViolation(v => { const next = v + 1; if (next >= MAX_VIOLATION) { setDiskualifikasi(true); clearInterval(timerRef.current); addToast("Kamu telah diskualifikasi!", "error"); } else { addToast(`⚠️ Peringatan ${next}/${MAX_VIOLATION}: Jangan pindah tab!`, "warning"); } return next; });
+    if (!ujianDimulai || submitted || diskualifikasi) return;
+    let wakeLock = null;
+    const requestWake = async () => {
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLock = await navigator.wakeLock.request("screen");
+        }
+      } catch (e) { /* browser tidak support, abaikan */ }
+    };
+    requestWake();
+    const onVisChange = () => { if (!document.hidden && !wakeLock?.released) requestWake(); };
+    document.addEventListener("visibilitychange", onVisChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisChange);
+      if (wakeLock && !wakeLock.released) wakeLock.release().catch(() => {});
+    };
+  }, [ujianDimulai, submitted, diskualifikasi]);
+
+  // === Deteksi pelanggaran: pindah tab, blur window, split screen ===
+  useEffect(() => {
+    if (!ujianDimulai) return;
+
+    const triggerViolation = (alasan) => {
+      if (submitted || diskualifikasi) return;
+      violationCountRef.current += 1;
+      const count = violationCountRef.current;
+      setTabViolation(count);
+      if (count >= MAX_VIOLATION) {
+        setDiskualifikasiAlasan(alasan);
+        setDiskualifikasi(true);
+        clearInterval(timerRef.current);
+        addToast("Sesi ujian diakhiri. Kamu telah diskualifikasi!", "error");
+      } else {
+        addToast(`⚠️ Peringatan ${count}/${MAX_VIOLATION}: ${
+          alasan === "tab" ? "Jangan berpindah tab!" :
+          alasan === "blur" ? "Jangan keluar dari halaman ujian!" :
+          "Jangan menggunakan split screen!"
+        }`, "warning");
       }
     };
+
+    // 1. Pindah tab (visibilitychange)
+    const onVisChange = () => {
+      if (document.hidden) triggerViolation("tab");
+    };
     document.addEventListener("visibilitychange", onVisChange);
-    return () => document.removeEventListener("visibilitychange", onVisChange);
-  }, [submitted, diskualifikasi]);
 
-  const formatWaktu = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+    // 2. Keluar browser / minimize / split screen (window blur)
+    const onBlur = () => {
+      // Cek apakah window mengecil (split screen) dengan membandingkan ukuran
+      const isSplit = window.innerWidth < window.screen.width * 0.75;
+      triggerViolation(isSplit ? "split" : "blur");
+    };
+    window.addEventListener("blur", onBlur);
 
+    // 3. Resize window kecil drastis = split screen
+    let lastWidth = window.innerWidth;
+    const onResize = () => {
+      const current = window.innerWidth;
+      if (current < lastWidth * 0.75) {
+        triggerViolation("split");
+      }
+      lastWidth = current;
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [ujianDimulai, submitted, diskualifikasi]);
+
+
+  const formatWaktu = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  // Hitung nilai objektif
   const hitungNilai = () => {
     let totalPoint = 0, didapatPoint = 0;
     const detail = [];
@@ -1945,72 +2308,387 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
       const pt = Number(s.point) || 0;
       totalPoint += pt;
       const jwb = jawaban[s.id];
-      if (s.jenisSoal === "Uraian/Esai") { adaEsai = true; detail.push({ no:idx+1, jenis:"Esai", dapat:0, max:pt, ket: jwb ? "Dijawab (menunggu koreksi)" : "Tidak dijawab" }); return; }
+
+      if (s.jenisSoal === "Uraian/Esai") {
+        adaEsai = true;
+        detail.push({ no: idx + 1, jenis: "Esai", dapat: 0, max: pt, ket: jwb ? "Dijawab (menunggu koreksi)" : "Tidak dijawab" });
+        return;
+      }
+
       const benar = JSON.parse(s.jawabanBenar || "[]");
-      if (!jwb) { detail.push({ no:idx+1, jenis:s.jenisSoal, dapat:0, max:pt, ket:"Tidak dijawab" }); return; }
-      if (s.jenisSoal === "Pilihan Ganda") { const dapat = jwb[0]===benar[0] ? pt : 0; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"PG", dapat, max:pt, ket:dapat>0?"Benar":"Salah" }); }
-      else if (s.jenisSoal === "Pilihan Ganda Kompleks") { const opsiAll = JSON.parse(s.opsi || "[]"); const jml = opsiAll.length; if (!jml) return; let skor = 0; opsiAll.forEach(o => { if (benar.includes(o) === jwb.includes(o)) skor++; }); const dapat = Math.round((pt * skor / jml) * 100) / 100; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"PGK", dapat, max:pt, ket:`${skor}/${jml} opsi tepat` }); }
-      else { const jml = benar.length; if (!jml) return; let skor = 0; benar.forEach((jb, i) => { if (jwb[i]===jb) skor++; }); const dapat = Math.round((pt * skor / jml) * 100) / 100; didapatPoint += dapat; detail.push({ no:idx+1, jenis:"B/S", dapat, max:pt, ket:`${skor}/${jml} benar` }); }
+      if (!jwb) {
+        detail.push({ no: idx + 1, jenis: s.jenisSoal, dapat: 0, max: pt, ket: "Tidak dijawab" });
+        return;
+      }
+
+      if (s.jenisSoal === "Pilihan Ganda") {
+        const dapat = jwb[0] === benar[0] ? pt : 0;
+        didapatPoint += dapat;
+        detail.push({ no: idx + 1, jenis: "PG", dapat, max: pt, ket: dapat > 0 ? "Benar" : "Salah" });
+      } else if (s.jenisSoal === "Pilihan Ganda Kompleks") {
+        const opsiAll = JSON.parse(s.opsi || "[]");
+        const jml = opsiAll.length;
+        if (!jml) return;
+        let skor = 0;
+        opsiAll.forEach(o => { if (benar.includes(o) === jwb.includes(o)) skor++; });
+        const dapat = Math.round((pt * skor / jml) * 100) / 100;
+        didapatPoint += dapat;
+        detail.push({ no: idx + 1, jenis: "PGK", dapat, max: pt, ket: `${skor}/${jml} opsi tepat` });
+      } else {
+        const jml = benar.length;
+        if (!jml) return;
+        let skor = 0;
+        benar.forEach((jb, i) => { if (jwb[i] === jb) skor++; });
+        const dapat = Math.round((pt * skor / jml) * 100) / 100;
+        didapatPoint += dapat;
+        detail.push({ no: idx + 1, jenis: "B/S", dapat, max: pt, ket: `${skor}/${jml} benar` });
+      }
     });
     didapatPoint = Math.round(didapatPoint * 100) / 100;
-    const totalObjektif = soalList.filter(s => s.jenisSoal !== "Uraian/Esai").reduce((a, s) => a + Number(s.point||0), 0);
+    const totalObjektif = soalList.filter(s => s.jenisSoal !== "Uraian/Esai").reduce((a, s) => a + Number(s.point || 0), 0);
     const nilai = totalObjektif > 0 ? Math.round((didapatPoint / totalObjektif) * 100) : 0;
     return { totalPoint, didapatPoint, nilai, detail, adaEsai };
   };
 
+  // Submit ujian
   const handleSubmit = async (autoSubmit = false) => {
     if (submitted) return;
     clearInterval(timerRef.current);
     const { nilai, didapatPoint, totalPoint, detail, adaEsai } = hitungNilai();
     setHasilAkhir({ nilai, didapatPoint, totalPoint, detail, adaEsai });
     setSubmitted(true);
-    const jawabanEsaiList = soalList.filter(s => s.jenisSoal === "Uraian/Esai").map((s) => ({ soal: s.soal, referensi: s.jawabanReferensi || "", jawaban: jawaban[s.id] || "" }));
+
+    const jawabanEsaiList = soalList
+      .filter(s => s.jenisSoal === "Uraian/Esai")
+      .map((s) => ({ soal: s.soal, referensi: s.jawabanReferensi || "", jawaban: jawaban[s.id] || "" }));
+
     try {
       const url = scriptUrl || APPS_SCRIPT_URL;
-      await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanHasil", nama:siswa.nama, nisn:siswa.nisn, noAbsen:siswa.noAbsen, mapel:siswa.mapel, asesmen:siswa.asesmen, nilai, adaEsai, jawabanEsai: adaEsai ? JSON.stringify(jawabanEsaiList) : "", token:siswa.token, waktu:new Date().toLocaleString("id-ID") }) });
+      await fetch(url, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "simpanHasil",
+          nama: siswa.nama, nisn: siswa.nisn, noAbsen: siswa.noAbsen,
+          mapel: siswa.mapel, asesmen: siswa.asesmen,
+          nilai, adaEsai,
+          jawabanEsai: adaEsai ? JSON.stringify(jawabanEsaiList) : "",
+          token: siswa.token,
+          waktu: new Date().toLocaleString("id-ID")
+        })
+      });
     } catch { /* demo */ }
     if (!autoSubmit) addToast("Ujian berhasil dikumpulkan! 🎉", "success");
   };
 
   const soal = soalList[currentIdx];
   const opsiList = soal ? JSON.parse(soal.opsi || "[]") : [];
-  const pctDone = soalList.length > 0 ? Math.round(((currentIdx+1)/soalList.length)*100) : 0;
+  const pctDone = soalList.length > 0 ? Math.round(((currentIdx + 1) / soalList.length) * 100) : 0;
   const [pdfLoading, setPdfLoading] = useState(false);
-  const handleUnduhPDF = async () => { setPdfLoading(true); try { await unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa: jawaban, namaGuru, nipGuru, kotaTTD, namaSekolah }); } catch(e) { addToast("Gagal membuat PDF.", "error"); } finally { setPdfLoading(false); } };
 
-  if (loading) return <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4"><div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div><p className="text-slate-600 font-medium">Memuat soal...</p></div>;
-  if (diskualifikasi) return <div className="max-w-sm mx-auto px-4 py-10 text-center"><div className="text-6xl mb-4">🚫</div><h2 className="text-2xl font-extrabold text-red-600 mb-2">Diskualifikasi</h2><p className="text-slate-600 mb-6">Kamu berpindah tab sebanyak {tabViolation} kali.</p><button onClick={onSelesai} className="bg-red-500 hover:bg-red-600 text-white font-bold px-6 py-3 rounded-xl">Kembali ke Beranda</button></div>;
-  if (submitted && hasilAkhir) return (
-    <div className="max-w-md mx-auto px-4 py-8">
-      <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-        <div className={`p-8 text-center ${hasilAkhir.nilai>=75?"bg-gradient-to-br from-green-500 to-emerald-600":hasilAkhir.nilai>=50?"bg-gradient-to-br from-amber-400 to-orange-500":"bg-gradient-to-br from-red-500 to-rose-600"}`}><div className="text-6xl mb-3">{hasilAkhir.nilai>=75?"🎉":hasilAkhir.nilai>=50?"👍":"📚"}</div><p className="text-white/80 text-sm font-medium">Nilai Kamu</p><p className="text-7xl font-extrabold text-white">{hasilAkhir.nilai}</p></div>
-        <div className="p-6 space-y-4">
-          <p className="font-bold text-slate-800 text-lg text-center">{siswa.nama}</p>
-          <div className="grid grid-cols-2 gap-3 text-sm">{[{ label:"Mapel", val:siswa.mapel },{ label:"Asesmen", val:siswa.asesmen },{ label:"Point", val:`${hasilAkhir.didapatPoint} / ${hasilAkhir.totalPoint}` },{ label:"Jumlah Soal", val:`${soalList.length} soal` }].map(s => (<div key={s.label} className="bg-slate-50 rounded-xl p-3"><p className="text-slate-500 text-xs">{s.label}</p><p className="font-bold text-slate-700 text-sm">{s.val}</p></div>))}</div>
-          <div className="bg-slate-50 rounded-xl p-3"><p className="text-xs font-bold text-slate-600 mb-2">📊 Rincian Poin Per Soal</p><div className="space-y-1">{hasilAkhir.detail.map(d => (<div key={d.no} className="flex items-center justify-between text-xs"><span className="text-slate-500">Soal {d.no} <span className="text-slate-400">({d.jenis})</span></span><span className="font-medium text-slate-700">{d.ket} → {d.dapat}/{d.max} poin</span></div>))}</div></div>
-          <div className={`rounded-xl p-3 text-sm font-medium text-center ${hasilAkhir.nilai>=75?"bg-green-50 text-green-700":hasilAkhir.nilai>=50?"bg-amber-50 text-amber-700":"bg-red-50 text-red-600"}`}>{hasilAkhir.nilai>=75?"🌟 Luar biasa! Kamu berhasil!":hasilAkhir.nilai>=50?"👍 Cukup baik! Terus belajar ya!":"📖 Jangan menyerah, belajar lebih giat!"}</div>
-          {hasilAkhir.adaEsai && <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-700 text-center">✏️ <strong>Ada soal uraian</strong> — nilai akhir akan diperbarui setelah guru mengoreksi jawaban esaimu.</div>}
-          <button onClick={handleUnduhPDF} disabled={pdfLoading} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-60">{pdfLoading ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"></span> Membuat PDF...</> : <>📥 Download PDF Hasil</>}</button>
-          <button onClick={onSelesai} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors">← Kembali ke Beranda</button>
+  const handleUnduhPDF = async () => {
+    setPdfLoading(true);
+    try {
+      await unduhPDF({ siswa, hasilAkhir, soalList, jawabanSiswa: jawaban, namaGuru, nipGuru, kotaTTD, namaSekolah });
+    } catch (e) {
+      addToast("Gagal membuat PDF.", "error");
+    } finally { setPdfLoading(false); }
+  };
+
+  // === JENDELA KONFIRMASI sebelum ujian ===
+  if (showKonfirmasi) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)" }}>
+        <div className="bg-white w-full max-w-md shadow-2xl overflow-hidden" style={{ borderRadius: "0", border: "3px solid #CC0000" }}>
+          <div className="text-white text-center py-6 px-6" style={{ background: "linear-gradient(135deg,#CC0000,#8B0000)", borderBottom: "4px solid #003082" }}>
+            <div className="text-5xl mb-3">⚠️</div>
+            <h2 className="text-xl font-black uppercase tracking-widest" style={{ fontFamily: "'Georgia', serif" }}>PERHATIAN PENTING</h2>
+            <p className="text-red-200 text-xs mt-1 uppercase tracking-widest">Baca sebelum memulai ujian</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="space-y-3 text-sm text-slate-700">
+              <div className="flex gap-3 items-start p-3" style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderLeft: "4px solid #CC0000", borderRadius: "0" }}>
+                <span className="text-lg flex-shrink-0">🚫</span>
+                <p><strong className="text-red-700">Dilarang berpindah tab, keluar browser, atau menggunakan split screen</strong> selama ujian berlangsung. Setiap jenis pelanggaran diberi toleransi <strong>{MAX_VIOLATION} kali</strong> — setelah itu sesi ujian langsung diakhiri dan kamu dinyatakan diskualifikasi.</p>
+              </div>
+              <div className="flex gap-3 items-start p-3" style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderLeft: "4px solid #003082", borderRadius: "0" }}>
+                <span className="text-lg flex-shrink-0">📱</span>
+                <p><strong className="text-blue-700">Layar perangkatmu akan dijaga tetap menyala</strong> selama ujian berlangsung secara otomatis oleh sistem.</p>
+              </div>
+              <div className="flex gap-3 items-start p-3" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderLeft: "4px solid #16a34a", borderRadius: "0" }}>
+                <span className="text-lg flex-shrink-0">✅</span>
+                <p>Pastikan koneksi internet stabil, waktu cukup, dan kamu siap mengerjakan <strong>{siswa.mapel} — {siswa.asesmen}</strong> selama <strong>{durasiMenit} menit</strong>.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 text-center">Dengan menekan "Mulai Ujian", kamu menyatakan siap dan memahami seluruh peraturan di atas.</p>
+            <div className="flex gap-3 pt-1">
+              <button onClick={onSelesai} className="flex-1 font-bold py-3 text-sm" style={{ background: "#e2e8f0", color: "#475569", borderRadius: "0" }}>← Kembali</button>
+              <button onClick={() => { setShowKonfirmasi(false); setUjianDimulai(true); }} className="flex-1 text-white font-black py-3 text-sm uppercase tracking-widest" style={{ background: "linear-gradient(135deg,#003082,#001a4d)", borderRadius: "0", letterSpacing: "0.15em" }}>
+                🚀 Mulai Ujian
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+        <p className="text-slate-600 font-medium">Memuat soal...</p>
+      </div>
+    );
+  }
+
+  if (diskualifikasi) {
+    const pesanAlasan = {
+      tab: `Kamu terdeteksi berpindah ke tab atau aplikasi lain sebanyak ${MAX_VIOLATION} kali selama sesi ujian berlangsung. Tindakan ini melanggar tata tertib integritas ujian.`,
+      blur: `Kamu terdeteksi keluar dari halaman ujian — misalnya meminimalkan browser atau beralih ke aplikasi lain — sebanyak ${MAX_VIOLATION} kali. Sistem secara otomatis mengakhiri sesimu.`,
+      split: `Kamu terdeteksi menggunakan fitur split screen atau mengubah ukuran jendela browser secara signifikan sebanyak ${MAX_VIOLATION} kali. Hal ini tidak diperkenankan selama ujian berlangsung.`,
+    };
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(160deg,#1a0000,#3d0000)" }}>
+        <div className="bg-white w-full max-w-sm shadow-2xl overflow-hidden text-center" style={{ border: "3px solid #CC0000", borderRadius: "0" }}>
+          <div className="py-8 px-6" style={{ background: "linear-gradient(135deg,#CC0000,#8B0000)", borderBottom: "4px solid #003082" }}>
+            <div className="text-6xl mb-3">🚫</div>
+            <h2 className="text-2xl font-black text-white uppercase tracking-widest" style={{ fontFamily: "'Georgia', serif" }}>Sesi Diakhiri</h2>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="py-3 px-4" style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "0" }}>
+              <p className="font-black text-lg" style={{ color: "#CC0000" }}>DISKUALIFIKASI</p>
+              <p className="text-slate-600 text-sm mt-2 leading-relaxed">
+                {pesanAlasan[diskualifikasiAlasan] || pesanAlasan.tab}
+              </p>
+            </div>
+            <div className="text-xs text-slate-500 p-3 text-left" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0" }}>
+              <p className="font-bold text-slate-700 mb-1">📋 Hasil ujian ini tidak akan tersimpan.</p>
+              <p>Hubungi guru kamu untuk informasi lebih lanjut mengenai tindak lanjut yang akan diberikan.</p>
+            </div>
+            <button onClick={onSelesai} className="w-full text-white font-bold py-3 text-sm uppercase tracking-widest" style={{ background: "#003082", borderRadius: "0" }}>← Kembali ke Beranda</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (submitted && hasilAkhir) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-8">
+        <div className="bg-white shadow-xl overflow-hidden" style={{ border: "2px solid #003082", borderRadius: "0" }}>
+          <div style={{ background: hasilAkhir.nilai >= 75 ? "linear-gradient(135deg,#16a34a,#15803d)" : hasilAkhir.nilai >= 50 ? "linear-gradient(135deg,#d97706,#b45309)" : "linear-gradient(135deg,#CC0000,#8B0000)", padding: "32px 24px", textAlign: "center", borderBottom: "4px solid #003082" }}>
+            <div className="text-6xl mb-3">{hasilAkhir.nilai >= 75 ? "🎉" : hasilAkhir.nilai >= 50 ? "👍" : "📚"}</div>
+            <p className="text-white/80 text-sm font-medium uppercase tracking-widest">Nilai Kamu</p>
+            <p className="text-7xl font-black text-white" style={{ fontFamily: "'Georgia', serif" }}>{hasilAkhir.nilai}</p>
+          </div>
+          <div className="p-6 space-y-4">
+            <p className="font-black text-slate-800 text-lg text-center uppercase tracking-wide">{siswa.nama}</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {[
+                { label: "Mapel", val: siswa.mapel },
+                { label: "Asesmen", val: siswa.asesmen },
+                { label: "Point", val: `${hasilAkhir.didapatPoint} / ${hasilAkhir.totalPoint}` },
+                { label: "Jumlah Soal", val: `${soalList.length} soal` }
+              ].map(s => (
+                <div key={s.label} className="p-3" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0" }}>
+                  <p className="text-slate-500 text-xs uppercase tracking-wide">{s.label}</p>
+                  <p className="font-bold text-slate-700 text-sm">{s.val}</p>
+                </div>
+              ))}
+            </div>
+            <div className="p-3" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0" }}>
+              <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">📊 Rincian Poin Per Soal</p>
+              <div className="space-y-1">
+                {hasilAkhir.detail.map(d => (
+                  <div key={d.no} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Soal {d.no} <span className="text-slate-400">({d.jenis})</span></span>
+                    <span className="font-medium text-slate-700">{d.ket} → {d.dapat}/{d.max} poin</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="p-3 text-sm font-bold text-center" style={{ background: hasilAkhir.nilai >= 75 ? "#f0fdf4" : hasilAkhir.nilai >= 50 ? "#fff7ed" : "#fef2f2", color: hasilAkhir.nilai >= 75 ? "#15803d" : hasilAkhir.nilai >= 50 ? "#b45309" : "#CC0000", border: `1px solid ${hasilAkhir.nilai >= 75 ? "#86efac" : hasilAkhir.nilai >= 50 ? "#fcd34d" : "#fca5a5"}`, borderRadius: "0" }}>
+              {hasilAkhir.nilai >= 75 ? "🌟 Luar biasa! Kamu berhasil!" : hasilAkhir.nilai >= 50 ? "👍 Cukup baik! Terus belajar ya!" : "📖 Jangan menyerah, belajar lebih giat!"}
+            </div>
+            {hasilAkhir.adaEsai && (
+              <div className="p-3 text-xs text-center" style={{ background: "#eff6ff", border: "1px solid #93c5fd", color: "#003082", borderRadius: "0" }}>
+                ✏️ <strong>Ada soal uraian</strong> — nilai akhir akan diperbarui setelah guru mengoreksi jawaban esaimu.
+              </div>
+            )}
+            <button onClick={handleUnduhPDF} disabled={pdfLoading} className="w-full text-white font-bold py-3 transition-all shadow-md flex items-center justify-center gap-2 text-sm disabled:opacity-60" style={{ background: "#003082", borderRadius: "0" }}>
+              {pdfLoading ? <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"></span> Membuat PDF...</> : <>📥 Download PDF Hasil</>}
+            </button>
+            <button onClick={onSelesai} className="w-full font-bold py-3 transition-colors" style={{ background: "#e2e8f0", color: "#475569", borderRadius: "0" }}>← Kembali ke Beranda</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!soal) return <div className="text-center py-10 text-slate-500">Soal tidak tersedia</div>;
 
   return (
     <div className="max-w-2xl mx-auto px-3 py-4">
-      <div className="flex items-center justify-between mb-3 bg-white rounded-2xl shadow px-4 py-3"><div><p className="text-xs text-slate-500 font-medium">{siswa.mapel} • {siswa.asesmen}</p><p className="text-sm font-bold text-slate-800">{siswa.nama}</p></div><div className="flex items-center gap-2">{tabViolation > 0 && <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-lg font-bold">⚠️ {tabViolation}/{MAX_VIOLATION}</span>}<div className={`font-mono font-extrabold text-lg px-3 py-1 rounded-xl ${waktu<300?"bg-red-100 text-red-600 animate-pulse":waktu<durasiDetik/2?"bg-amber-100 text-amber-700":"bg-blue-100 text-blue-700"}`}>⏱ {formatWaktu(waktu)}</div></div></div>
-      <div className="mb-4 bg-white rounded-2xl shadow px-4 py-3"><div className="flex justify-between text-xs text-slate-500 mb-1"><span>Soal {currentIdx+1} dari {soalList.length}</span><span>{pctDone}%</span></div><div className="w-full bg-slate-200 rounded-full h-2.5 mb-3"><div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2.5 rounded-full transition-all duration-500" style={{ width:`${pctDone}%` }} /></div><div className="flex flex-wrap gap-1.5">{soalList.map((s, i) => (<button key={i} onClick={() => setCurrentIdx(i)} className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${i===currentIdx?"bg-blue-600 text-white":jawaban[s.id]?"bg-green-100 text-green-700 border border-green-300":"bg-slate-100 text-slate-500"}`}>{i+1}</button>))}</div></div>
-      <div className="bg-white rounded-2xl shadow-lg p-5 mb-4">
-        <div className="flex items-start gap-3 mb-4"><span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-1 rounded-lg flex-shrink-0">{currentIdx+1}</span><div className="flex-1"><div className="flex items-center gap-2 mb-2 flex-wrap"><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${soal.jenisSoal==="Pilihan Ganda"?"bg-blue-100 text-blue-700":soal.jenisSoal==="Pilihan Ganda Kompleks"?"bg-purple-100 text-purple-700":soal.jenisSoal==="Uraian/Esai"?"bg-indigo-100 text-indigo-700":"bg-orange-100 text-orange-700"}`}>{soal.jenisSoal}</span><span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">⭐ {soal.point} poin</span></div><p className="text-slate-800 font-medium leading-relaxed"><MathText text={soal.soal} /></p></div></div>
-        {soal.gambar && soal.gambar.trim() && <div className="mb-4"><GambarSoal url={soal.gambar} alt="Gambar soal" /></div>}
-        {soal.jenisSoal === "Pilihan Ganda" && <div className="space-y-2">{opsiList.map((o, i) => { const sel = jawaban[soal.id]?.[0] === o; return (<button key={i} onClick={() => setJawaban(p => ({ ...p, [soal.id]:[o] }))} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${sel?"border-blue-500 bg-blue-50 text-blue-800":"border-slate-200 hover:border-blue-300 hover:bg-blue-50/50"}`}><span className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold flex-shrink-0 ${sel?"bg-blue-600 text-white":"bg-slate-100 text-slate-600"}`}>{String.fromCharCode(65+i)}</span><span className="text-sm font-medium flex-1"><MathText text={o} /></span></button>); })}</div>}
-        {soal.jenisSoal === "Pilihan Ganda Kompleks" && <div className="space-y-2"><p className="text-xs text-purple-600 font-semibold mb-2 bg-purple-50 px-3 py-1.5 rounded-lg">✅ Pilih SEMUA jawaban yang benar — skor parsial per opsi</p>{opsiList.map((o, i) => { const sel = (jawaban[soal.id] || []).includes(o); return (<button key={i} onClick={() => setJawaban(p => { const prev = p[soal.id] || []; return { ...p, [soal.id]:prev.includes(o)?prev.filter(x=>x!==o):[...prev,o] }; })} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all"><input type="checkbox" checked={sel} onChange={()=>{}} className="w-5 h-5 rounded border-slate-300 text-purple-600 focus:ring-purple-500" /><span className="text-sm font-medium flex-1"><MathText text={o} /></span></button>); })}</div>}
-        {soal.jenisSoal === "Benar/Salah Kompleks" && <div className="space-y-3"><p className="text-xs text-orange-600 font-semibold mb-2 bg-orange-50 px-3 py-1.5 rounded-lg">Tentukan Benar atau Salah — skor parsial per pernyataan</p>{opsiList.map((o, i) => { const val = (jawaban[soal.id] || [])[i]; return (<div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200"><span className="text-xs text-slate-500 font-bold w-5 flex-shrink-0">{i+1}.</span><p className="flex-1 text-sm text-slate-700"><MathText text={o} /></p><div className="flex gap-2 flex-shrink-0">{["Benar","Salah"].map(v => (<button key={v} onClick={() => setJawaban(p => { const arr = [...(p[soal.id] || opsiList.map(()=>""))]; arr[i] = v; return { ...p, [soal.id]:arr }; })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${val===v?(v==="Benar"?"bg-green-500 text-white":"bg-red-500 text-white"):"bg-slate-200 text-slate-600"}`}>{v}</button>))}</div></div>); })}</div>}
-        {soal.jenisSoal === "Uraian/Esai" && <div className="space-y-3"><p className="text-xs text-indigo-600 font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg">✏️ Soal Uraian — Tulis jawaban kamu di bawah ini. Nilai ditentukan oleh guru.</p><textarea value={jawaban[soal.id] || ""} onChange={e => setJawaban(p => ({ ...p, [soal.id]: e.target.value }))} rows={6} placeholder="Tulis jawabanmu di sini..." className="w-full border-2 border-indigo-200 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-800 leading-relaxed resize-none focus:outline-none" /><div className="flex justify-between text-xs text-slate-400"><span>{(jawaban[soal.id] || "").length} karakter</span><span className={jawaban[soal.id] ? "text-green-500 font-semibold" : ""}>{jawaban[soal.id] ? "✓ Sudah dijawab" : "Belum dijawab"}</span></div></div>}
+      {/* Header ujian */}
+      <div className="flex items-center justify-between mb-3 bg-white shadow px-4 py-3" style={{ borderLeft: "4px solid #CC0000", borderRadius: "0" }}>
+        <div>
+          <p className="text-xs text-slate-500 font-medium">{siswa.mapel} • {siswa.asesmen}</p>
+          <p className="text-sm font-bold text-slate-800">{siswa.nama}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {tabViolation > 0 && <span className="text-xs px-2 py-1 font-bold" style={{ background: "#fff7ed", color: "#b45309", border: "1px solid #f59e0b" }}>⚠️ {tabViolation}/{MAX_VIOLATION}</span>}
+          <div className={`font-mono font-extrabold text-lg px-3 py-1 ${waktu < 300 ? "animate-pulse" : ""}`} style={{ background: waktu < 300 ? "#fef2f2" : waktu < durasiDetik / 2 ? "#fff7ed" : "#eff6ff", color: waktu < 300 ? "#CC0000" : waktu < durasiDetik / 2 ? "#b45309" : "#003082", border: `2px solid ${waktu < 300 ? "#CC0000" : waktu < durasiDetik / 2 ? "#f59e0b" : "#003082"}`, borderRadius: "0" }}>
+            ⏱ {formatWaktu(waktu)}
+          </div>
+        </div>
       </div>
-      <div className="flex gap-3"><button onClick={() => setCurrentIdx(i => Math.max(0, i-1))} disabled={currentIdx===0} className="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-30">← Sebelumnya</button>{currentIdx < soalList.length-1 ? (<button onClick={() => setCurrentIdx(i => i+1)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors">Berikutnya →</button>) : (<button onClick={() => handleSubmit(false)} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-md">🏁 Kumpulkan</button>)}</div>
+
+      {/* Progress dan navigasi soal */}
+      <div className="mb-4 bg-white shadow px-4 py-3" style={{ borderLeft: "4px solid #003082", borderRadius: "0" }}>
+        <div className="flex justify-between text-xs text-slate-500 mb-1">
+          <span>Soal {currentIdx + 1} dari {soalList.length}</span>
+          <span>{pctDone}%</span>
+        </div>
+        <div className="w-full bg-slate-200 rounded-full h-2.5 mb-3">
+          <div className="bg-red-700 h-2.5 transition-all duration-500" style={{ width: `${pctDone}%` }} />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {soalList.map((s, i) => (
+            <button key={i} onClick={() => setCurrentIdx(i)} className={`w-8 h-8 text-xs font-bold transition-colors ${i === currentIdx ? "text-white" : jawaban[s.id] ? "text-green-700 border border-green-300" : "text-slate-500"}`} style={{ background: i === currentIdx ? "#CC0000" : jawaban[s.id] ? "#dcfce7" : "#f1f5f9", borderRadius: "0" }}>
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Konten soal */}
+      <div className="bg-white shadow-lg p-5 mb-4" style={{ borderTop: "3px solid #CC0000", borderRadius: "0" }}>
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-white text-xs font-bold px-2.5 py-1 flex-shrink-0" style={{ background: "#CC0000" }}>{currentIdx + 1}</span>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className="text-xs px-2 py-0.5 font-bold uppercase tracking-wide" style={{ background: "#003082", color: "#fff", borderRadius: "0" }}>
+                {soal.jenisSoal}
+              </span>
+              {soal.jenisSoal !== "Uraian/Esai" && (
+                <span className="text-xs px-2 py-0.5 font-bold" style={{ background: "#fef9c3", color: "#854d0e", border: "1px solid #ca8a04", borderRadius: "0" }}>⭐ {soal.point} poin</span>
+              )}
+              {soal.jenisSoal === "Uraian/Esai" && (
+                <span className="text-xs px-2 py-0.5 font-bold" style={{ background: "#fff7ed", color: "#9a3412", border: "1px solid #ea580c", borderRadius: "0" }}>✏️ Koreksi manual</span>
+              )}
+            </div>
+            {/* Render soal dengan HTML (support bold, list, formula) */}
+            <div className="text-slate-800 font-medium leading-relaxed prose prose-sm max-w-none">
+              <RenderHTML html={soal.soal} />
+            </div>
+          </div>
+        </div>
+
+        {/* Gambar soal */}
+        {soal.gambar && soal.gambar.trim() && (
+          <div className="mb-4"><GambarSoal url={soal.gambar} alt="Gambar soal" /></div>
+        )}
+
+        {/* Pilihan Ganda */}
+        {soal.jenisSoal === "Pilihan Ganda" && (
+          <div className="space-y-2">
+            {opsiList.map((o, i) => {
+              const sel = jawaban[soal.id]?.[0] === o;
+              return (
+                <button key={i} onClick={() => setJawaban(p => ({ ...p, [soal.id]: [o] }))} className="w-full flex items-center gap-3 px-4 py-3 text-left transition-all" style={{ border: sel ? "2px solid #CC0000" : "2px solid #d1d5db", background: sel ? "#fef2f2" : "#fff", borderRadius: "0" }}>
+                  <span className="w-8 h-8 flex items-center justify-center text-sm font-extrabold flex-shrink-0" style={{ background: sel ? "#CC0000" : "#f1f5f9", color: sel ? "#fff" : "#475569", borderRadius: "0" }}>{String.fromCharCode(65 + i)}</span>
+                  <span className="text-sm font-medium flex-1" style={{ color: sel ? "#9b1c1c" : "#1e293b" }}><MathText text={o} /></span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pilihan Ganda Kompleks */}
+        {soal.jenisSoal === "Pilihan Ganda Kompleks" && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold mb-2 px-3 py-1.5" style={{ color: "#003082", background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: "0" }}>✅ Pilih SEMUA jawaban yang benar — skor parsial per opsi</p>
+            {opsiList.map((o, i) => {
+              const sel = (jawaban[soal.id] || []).includes(o);
+              return (
+                <button key={i} onClick={() => setJawaban(p => {
+                  const prev = p[soal.id] || [];
+                  return { ...p, [soal.id]: prev.includes(o) ? prev.filter(x => x !== o) : [...prev, o] };
+                })} className="w-full flex items-center gap-3 px-4 py-3 text-left transition-all" style={{ border: sel ? "2px solid #003082" : "2px solid #d1d5db", background: sel ? "#eff6ff" : "#fff", borderRadius: "0" }}>
+                  <input type="checkbox" checked={sel} onChange={() => { }} className="w-5 h-5 border-slate-300" />
+                  <span className="text-sm font-medium flex-1"><MathText text={o} /></span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Benar/Salah Kompleks */}
+        {soal.jenisSoal === "Benar/Salah Kompleks" && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold mb-2 px-3 py-1.5" style={{ color: "#9a3412", background: "#fff7ed", border: "1px solid #fb923c", borderRadius: "0" }}>Tentukan Benar atau Salah — skor parsial per pernyataan</p>
+            {opsiList.map((o, i) => {
+              const val = (jawaban[soal.id] || [])[i];
+              return (
+                <div key={i} className="flex items-center gap-3 p-3" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0" }}>
+                  <span className="text-xs text-slate-500 font-bold w-5 flex-shrink-0">{i + 1}.</span>
+                  <p className="flex-1 text-sm text-slate-700"><MathText text={o} /></p>
+                  <div className="flex gap-2 flex-shrink-0">
+                    {["Benar", "Salah"].map(v => (
+                      <button key={v} onClick={() => setJawaban(p => {
+                        const arr = [...(p[soal.id] || opsiList.map(() => ""))];
+                        arr[i] = v;
+                        return { ...p, [soal.id]: arr };
+                      })} className="px-3 py-1.5 text-xs font-bold transition-colors" style={{ background: val === v ? (v === "Benar" ? "#16a34a" : "#CC0000") : "#e2e8f0", color: val === v ? "#fff" : "#475569", borderRadius: "0" }}>
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Uraian/Esai */}
+        {soal.jenisSoal === "Uraian/Esai" && (
+          <div className="space-y-3">
+            <p className="text-xs font-bold px-3 py-1.5" style={{ color: "#003082", background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: "0" }}>
+              ✏️ Soal Uraian — Tulis jawaban kamu di bawah ini. Nilai ditentukan oleh guru.
+            </p>
+            <textarea
+              value={jawaban[soal.id] || ""}
+              onChange={e => setJawaban(p => ({ ...p, [soal.id]: e.target.value }))}
+              rows={6}
+              placeholder="Tulis jawabanmu di sini..."
+              className="w-full px-4 py-3 text-sm text-slate-800 leading-relaxed resize-none focus:outline-none"
+              style={{ border: "2px solid #003082", borderRadius: "0" }}
+            />
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>{(jawaban[soal.id] || "").length} karakter</span>
+              <span className={jawaban[soal.id] ? "font-semibold" : ""} style={{ color: jawaban[soal.id] ? "#16a34a" : undefined }}>
+                {jawaban[soal.id] ? "✓ Sudah dijawab" : "Belum dijawab"}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tombol navigasi */}
+      <div className="flex gap-3">
+        <button onClick={() => setCurrentIdx(i => Math.max(0, i - 1))} disabled={currentIdx === 0} className="flex-1 font-bold py-3 transition-colors disabled:opacity-30" style={{ background: "#e2e8f0", color: "#475569", borderRadius: "0" }}>
+          ← Sebelumnya
+        </button>
+        {currentIdx < soalList.length - 1 ? (
+          <button onClick={() => setCurrentIdx(i => i + 1)} className="flex-1 text-white font-bold py-3 transition-colors" style={{ background: "#003082", borderRadius: "0" }}>
+            Berikutnya →
+          </button>
+        ) : (
+          <button onClick={() => handleSubmit(false)} className="flex-1 text-white font-bold py-3 transition-all shadow-md" style={{ background: "#16a34a", borderRadius: "0" }}>
+            🏁 Kumpulkan
+          </button>
+        )}
+      </div>
       <p className="text-center text-xs text-slate-400 mt-3">Terjawab: {Object.keys(jawaban).length}/{soalList.length} soal</p>
     </div>
   );
@@ -2059,11 +2737,11 @@ export default function App() {
   const handleSelesaiUjian = async () => { setSiswa(null); setMode("siswa"); try { if (document.fullscreenElement || document.webkitFullscreenElement) { if (document.exitFullscreen) await document.exitFullscreen(); else if (document.webkitExitFullscreen) await document.webkitExitFullscreen(); } } catch {} };
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+    <div className="min-h-screen bg-gray-100">
       <Toast toasts={toasts} />
       {mode !== "guru" && mode !== "guruLogin" && <AppHeader logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />}
       <main className="pb-10">
-        {mode === "siswa" && <HalamanSiswa onMulaiUjian={handleMulaiUjian} onGuruMode={() => setMode("guruLogin")} mapelList={mapelList} asesmenList={asesmenList} />}
+        {mode === "siswa" && <HalamanSiswa onMulaiUjian={handleMulaiUjian} onGuruMode={() => setMode("guruLogin")} mapelList={mapelList} asesmenList={asesmenList} logoUrl={settings.logoUrl} />}
         {mode === "ujian" && siswa && <HalamanUjian siswa={siswa} scriptUrl={scriptUrl} addToast={addToast} onSelesai={handleSelesaiUjian} durasiMenit={settings.durasiMenit || 60} namaGuru={settings.namaGuru || ""} nipGuru={settings.nipGuru || ""} kotaTTD={settings.kotaTTD || ""} namaSekolah={settings.namaSekolah || ""} />}
         {mode === "guruLogin" && <GuruLogin onLogin={() => setMode("guru")} />}
         {mode === "guru" && <GuruPanel addToast={addToast} onLogout={() => setMode("siswa")} settings={settings} onSaveSettings={saveSettings} scriptUrl={scriptUrl} onSaveScriptUrl={saveScriptUrl} mapelList={mapelList} setMapelList={handleSetMapelList} asesmenList={asesmenList} setAsesmenList={handleSetAsesmenList} />}

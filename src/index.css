@@ -9,3 +9,63 @@
 body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
+
+/* ============================================
+   Style untuk RichTextEditor dan RenderHTML
+   ============================================ */
+
+/* Style untuk list di editor dan tampilan siswa */
+.prose ul, .prose ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.prose li {
+  margin: 0.25rem 0;
+}
+
+.prose p {
+  margin: 0 0 0.5rem 0;
+}
+
+/* Style untuk formula matematika KaTeX */
+.katex-display {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.katex {
+  font-size: 1.1em;
+}
+
+/* Style untuk editor contenteditable */
+[contenteditable] {
+  outline: none;
+}
+
+[contenteditable] ul, 
+[contenteditable] ol {
+  margin: 0.25rem 0;
+  padding-left: 1.5rem;
+}
+
+[contenteditable] li {
+  margin: 0.125rem 0;
+}
+
+/* Placeholder untuk editor */
+[contenteditable][data-placeholder]:empty:before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  font-style: normal;
+}
+
+/* Style untuk toolbar button */
+.toolbar-btn {
+  transition: all 0.2s ease;
+}
+
+.toolbar-btn:hover {
+  background-color: #e2e8f0;
+}

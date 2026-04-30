@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import * as FS from "./firestore.js";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwer1KXCdelksKdIGhvdgTBIM0-3-092_aLQ9ivMpWGniQZBTUkqT8nYFgilLbQXHtF/exec";
+// Backend: Firestore (lihat src/firestore.js)
 const DEFAULT_MAPEL = [
   "Bahasa Indonesia","Pendidikan Pancasila","IPAS","Matematika",
   "Seni Rupa","Bahasa Madura","Pendidikan Agama Islam","PJOK"
@@ -73,6 +74,53 @@ function MathText({ text, className = "" }) {
   if (!text) return null;
   if (!ready || !String(text).includes("$")) return <span className={className}>{text}</span>;
   return <span ref={ref} className={className} />;
+}
+
+// HtmlMathText: render HTML dari rich text editor + proses KaTeX di dalamnya
+// Dipakai di TabViewSoal agar soal tampil persis seperti di halaman siswa
+function HtmlMathText({ html, className = "" }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(!!window.katex);
+  useEffect(() => {
+    if (!window.katex) loadKatex().then(() => setReady(true));
+  }, []);
+  useEffect(() => {
+    if (!ref.current || !html) return;
+    const el = ref.current;
+    // Set HTML dulu (render bold, list, br, dsb dari rich text editor)
+    el.innerHTML = html || "";
+    if (!ready || !window.katex) return;
+    // Proses KaTeX: cari semua text node, replace $...$ dan $$...$$
+    const processNode = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent;
+        if (!text.includes("$")) return;
+        const pattern = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
+        let match, lastIdx = 0, frag = document.createDocumentFragment();
+        let found = false;
+        while ((match = pattern.exec(text)) !== null) {
+          found = true;
+          if (match.index > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+          const raw = match[0];
+          const isBlock = raw.startsWith("$$");
+          const formula = isBlock ? raw.slice(2,-2).trim() : raw.slice(1,-1).trim();
+          const span = document.createElement("span");
+          try { span.innerHTML = window.katex.renderToString(formula, { displayMode: isBlock, throwOnError: false }); }
+          catch { span.textContent = raw; }
+          frag.appendChild(span);
+          lastIdx = match.index + raw.length;
+        }
+        if (found) {
+          if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+          node.parentNode.replaceChild(frag, node);
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        Array.from(node.childNodes).forEach(processNode);
+      }
+    };
+    Array.from(el.childNodes).forEach(processNode);
+  }, [html, ready]);
+  return <div ref={ref} className={"prose prose-sm max-w-none " + className} />;
 }
 
 const isMapelMath = (mapel) => mapel === "Matematika";
@@ -468,15 +516,23 @@ function useToast() {
 function AppHeader({ logoUrl, namaSekolah }) {
   return (
     <header style={{ background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)", borderBottom: "4px solid #003082" }}>
-      <div style={{ background: "#003082", height: "6px" }} />
-      <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col items-center gap-2">
-        {logoUrl && (
-          <LogoSekolah url={logoUrl} className="object-contain" style={{ maxHeight: "36px", maxWidth: "44px", mixBlendMode: "multiply", filter: "brightness(0) invert(1)" }} />
-        )}
-        <h1 className="text-lg md:text-xl font-black tracking-widest text-white uppercase leading-tight" style={{ fontFamily: "'Georgia', serif", textShadow: "0 1px 3px rgba(0,0,0,0.3)", letterSpacing: "0.12em" }}>
-          PORTAL UJIAN DIGITAL
-        </h1>
-        {namaSekolah && <p className="text-xs text-red-200 font-medium tracking-wide -mt-1">{namaSekolah}</p>}
+      <div style={{ background: "#003082", height: "5px" }} />
+      <div className="max-w-4xl mx-auto px-5 py-3 flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          {logoUrl && (
+            <img src={logoUrl} alt="Logo"
+              style={{ height: "44px", width: "44px", objectFit: "contain", flexShrink: 0, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}
+              onError={e => { e.target.style.display = "none"; }} />
+          )}
+          <div>
+            <h1 className="text-base font-black text-white uppercase leading-tight" style={{ fontFamily: "'Georgia', serif", letterSpacing: "0.07em" }}>
+              {namaSekolah || "CBT UJIAN DIGITAL"}
+            </h1>
+            {namaSekolah && (
+              <p className="font-bold uppercase" style={{ color: "rgba(255,255,255,0.60)", marginTop: "1px", letterSpacing: "0.16em", fontSize: "0.6rem" }}>CBT UJIAN DIGITAL</p>
+            )}
+          </div>
+        </div>
       </div>
     </header>
   );
@@ -542,44 +598,21 @@ const btn = (color="blue") => ({
 // ============================================================
 // API helpers
 // ============================================================
-async function fetchMapelList(scriptUrl) {
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) return [...DEFAULT_MAPEL];
-  try {
-    const res = await fetch(`${url}?action=getAllMapel`);
-    const data = await res.json();
-    if (data.status === "success") return data.data;
-    return [...DEFAULT_MAPEL];
-  } catch { return [...DEFAULT_MAPEL]; }
+async function fetchMapelList() {
+  const d = await FS.getAllMapel();
+  return d.status === "success" ? d.data : [...DEFAULT_MAPEL];
 }
-async function fetchAsesmenList(scriptUrl) {
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) return [...DEFAULT_ASESMEN];
-  try {
-    const res = await fetch(`${url}?action=getAllAsesmen`);
-    const data = await res.json();
-    if (data.status === "success") return data.data;
-    return [...DEFAULT_ASESMEN];
-  } catch { return [...DEFAULT_ASESMEN]; }
+async function fetchAsesmenList() {
+  const d = await FS.getAllAsesmen();
+  return d.status === "success" ? d.data : [...DEFAULT_ASESMEN];
 }
-async function fetchKKM(scriptUrl) {
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) return {};
-  try {
-    const res = await fetch(`${url}?action=getKKM`);
-    const data = await res.json();
-    if (data.status === "success") return data.data;
-    return {};
-  } catch { return {}; }
+async function fetchKKM() {
+  const d = await FS.getKKM();
+  return d.status === "success" ? d.data : {};
 }
-async function simpanKKM(scriptUrl, kkmData) {
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) return false;
-  try {
-    const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanKKM", kkm: kkmData }) });
-    const d = await res.json();
-    return d.status === "success";
-  } catch { return false; }
+async function simpanKKM(kkmData) {
+  const d = await FS.simpanKKM({ kkm: kkmData });
+  return d.status === "success";
 }
 
 // ============================================================
@@ -590,12 +623,9 @@ function TabDashboard({ onNav, addToast, settings }) {
   const [loadingStats, setLoadingStats] = useState(false);
   
   useEffect(() => {
-    const url = APPS_SCRIPT_URL;
-    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
     setLoadingStats(true);
-    fetch(`${url}?action=getStats`)
-      .then(r => r.json())
-      .then(d => { if (d.status==="success") setStats(d.data); })
+    FS.getStats()
+      .then(d => { if(d.status==="success") setStats(d.data); })
       .catch(()=>{})
       .finally(()=>setLoadingStats(false));
   }, []);
@@ -692,19 +722,15 @@ function TabSiswa({ scriptUrl, addToast }) {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
   const fetchSiswa = async () => {
-    const url = scriptUrl || APPS_SCRIPT_URL;
-    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
     setLoading(true);
-    try { const r = await fetch(`${url}?action=getSiswa`); const d = await r.json(); if (d.status==="success") setDaftarSiswa(d.data || []); } catch {} finally { setLoading(false); }
+    try { const d = await FS.getSiswa(); if (d.status==="success") setDaftarSiswa(d.data || []); } catch {} finally { setLoading(false); }
   };
   useEffect(() => { fetchSiswa(); }, []);
   const handleTambah = async () => {
     if (!nisn.trim() || !nama.trim() || !kelas.trim()) return addToast("Semua field harus diisi!", "error");
     setSaving(true);
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahSiswa", nisn:nisn.trim(), nama:nama.trim(), kelas:kelas.trim() }) });
-      const d = await r.json();
+      const d = await FS.tambahSiswa({ nisn:nisn.trim(), nama:nama.trim(), kelas:kelas.trim() });
       if (d.status==="success") { addToast("Siswa berhasil ditambahkan!", "success"); setNisn(""); setNama(""); setKelas(""); setShowForm(false); fetchSiswa(); }
       else addToast(d.message || "Gagal", "error");
     } catch { addToast("Tidak terhubung ke server", "warning"); } finally { setSaving(false); }
@@ -712,8 +738,7 @@ function TabSiswa({ scriptUrl, addToast }) {
   const handleHapus = async (nisnTarget) => {
     if (!window.confirm(`Hapus siswa NISN ${nisnTarget}?`)) return;
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusSiswa", nisn:nisnTarget }) });
+      await FS.hapusSiswa({ nisn:nisnTarget });
       addToast("Siswa dihapus!", "success"); fetchSiswa();
     } catch { addToast("Gagal menghapus siswa", "error"); }
   };
@@ -756,11 +781,9 @@ function TabSiswa({ scriptUrl, addToast }) {
         if (nisnVal && namaVal) siswaList.push({ nisn: nisnVal, nama: namaVal, kelas: kelasVal });
       }
       if (siswaList.length === 0) return addToast("Tidak ada data valid dalam file.", "error");
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      if (url.includes("YOUR_APPS_SCRIPT_ID")) { addToast(`Demo: Ditemukan ${siswaList.length} siswa. Hubungkan ke Apps Script untuk menyimpan.`, "warning"); setImporting(false); return; }
       let sukses = 0, gagal = 0;
       for (const s of siswaList) {
-        try { const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahSiswa", ...s }) }); const d = await r.json(); if (d.status === "success") sukses++; else gagal++; } catch { gagal++; }
+        try { const d = await FS.tambahSiswa(s); if (d.status === "success") sukses++; else gagal++; } catch { gagal++; }
       }
       addToast(`✅ Import selesai: ${sukses} berhasil, ${gagal} gagal (duplikasi NISN dilewati).`, sukses > 0 ? "success" : "error");
       fetchSiswa();
@@ -843,7 +866,7 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
 
   const loadKKM = async () => {
     setKkmLoading(true);
-    const data = await fetchKKM(scriptUrl);
+    const data = await fetchKKM();
     setKkmData(data);
     setKkmLoading(false);
   };
@@ -854,7 +877,7 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
   };
   const handleSaveKKM = async () => {
     setKkmSaving(true);
-    const success = await simpanKKM(scriptUrl, kkmData);
+    const success = await simpanKKM(kkmData);
     if (success) addToast("KKM berhasil disimpan!", "success");
     else addToast("Gagal menyimpan KKM", "error");
     setKkmSaving(false);
@@ -865,13 +888,11 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
     if (!m) return addToast("Nama mapel tidak boleh kosong!", "error");
     if (mapelList.includes(m)) return addToast("Mapel sudah ada!", "warning");
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahMapelKustom", nama:m }) });
-      const d = await res.json();
+      const d = await FS.tambahMapelKustom({ nama:m });
       if (d.status === "success") {
         addToast(`Mapel "${m}" ditambahkan!`, "success");
         setNewMapel("");
-        const newMapels = await fetchMapelList(scriptUrl);
+        const newMapels = await fetchMapelList();
         setMapelList(newMapels);
         loadKKM();
       } else addToast(d.message, "error");
@@ -881,12 +902,10 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
     if (DEFAULT_MAPEL.includes(m)) return addToast("Mapel bawaan tidak bisa dihapus.", "warning");
     if (!window.confirm(`Hapus mapel "${m}"?`)) return;
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusMapelKustom", nama:m }) });
-      const d = await res.json();
+      const d = await FS.hapusMapelKustom({ nama:m });
       if (d.status === "success") {
         addToast(`Mapel "${m}" dihapus.`, "success");
-        const newMapels = await fetchMapelList(scriptUrl);
+        const newMapels = await fetchMapelList();
         setMapelList(newMapels);
         loadKKM();
       } else addToast(d.message, "error");
@@ -897,13 +916,11 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
     if (!a) return addToast("Nama asesmen tidak boleh kosong!", "error");
     if (asesmenList.includes(a)) return addToast("Asesmen sudah ada!", "warning");
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"tambahAsesmenKustom", nama:a }) });
-      const d = await res.json();
+      const d = await FS.tambahAsesmenKustom({ nama:a });
       if (d.status === "success") {
         addToast(`Asesmen "${a}" ditambahkan!`, "success");
         setNewAsesmen("");
-        const newAsesmens = await fetchAsesmenList(scriptUrl);
+        const newAsesmens = await fetchAsesmenList();
         setAsesmenList(newAsesmens);
       } else addToast(d.message, "error");
     } catch { addToast("Gagal terhubung ke server", "error"); }
@@ -912,31 +929,25 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
     if (DEFAULT_ASESMEN.includes(a)) return addToast("Asesmen bawaan tidak bisa dihapus.", "warning");
     if (!window.confirm(`Hapus asesmen "${a}"?`)) return;
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, { method:"POST", body:JSON.stringify({ action:"hapusAsesmenKustom", nama:a }) });
-      const d = await res.json();
+      const d = await FS.hapusAsesmenKustom({ nama:a });
       if (d.status === "success") {
         addToast(`Asesmen "${a}" dihapus.`, "success");
-        const newAsesmens = await fetchAsesmenList(scriptUrl);
+        const newAsesmens = await fetchAsesmenList();
         setAsesmenList(newAsesmens);
       } else addToast(d.message, "error");
     } catch { addToast("Gagal terhubung ke server", "error"); }
   };
 
   const fetchToken = async () => {
-    const url = scriptUrl || APPS_SCRIPT_URL;
-    if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
     setLoadToken(true);
-    try { const r = await fetch(`${url}?action=getDaftarToken`); const d = await r.json(); if (d.status==="success") setDaftarToken(d.data || []); } catch {} finally { setLoadToken(false); }
+    try { const d = await FS.getDaftarToken(); if (d.status==="success") setDaftarToken(d.data || []); } catch {} finally { setLoadToken(false); }
   };
   useEffect(() => { fetchToken(); }, []);
 
   const handleSimpanToken = async () => {
     if (!tokenValue.trim()) return addToast("Isi token terlebih dahulu!", "error");
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanToken", mapel:tokenMapel, asesmen:tokenAsesmen, token:tokenValue.toUpperCase() }) });
-      const d = await r.json();
+      const d = await FS.simpanToken({ mapel:tokenMapel, asesmen:tokenAsesmen, token:tokenValue.toUpperCase() });
       if (d.status==="success") { addToast(`Token "${tokenValue.toUpperCase()}" disimpan!`, "success"); setTokenValue(""); fetchToken(); }
       else addToast(d.message, "error");
     } catch { addToast(`Demo: Token "${tokenValue}" (belum terhubung)`, "warning"); }
@@ -944,22 +955,35 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
 
   // Update status token (aktif/nonaktif)
   const handleToggleStatus = async (mapel, asesmen, token, currentStatus) => {
+    // Optimistic UI update dulu
+    setDaftarToken(prev => prev.map(t =>
+      t.mapel === mapel && t.asesmen === asesmen && t.token === token
+        ? { ...t, aktif: currentStatus === "TRUE" ? "FALSE" : "TRUE" }
+        : t
+    ));
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
       const newStatus = currentStatus === "TRUE" ? "FALSE" : "TRUE";
-      const response = await fetch(url, {
-        method: "POST",
-        body: JSON.stringify({ action: "updateTokenStatus", mapel, asesmen, status: newStatus })
-      });
-      const result = await response.json();
+      const result = await FS.updateTokenStatus({ mapel, asesmen, token, status: newStatus });
       if (result.status === "success") {
-        addToast(`Token ${newStatus === "TRUE" ? "diaktifkan" : "dinonaktifkan"}!`, "success");
-        fetchToken();
+        addToast(`Token ${newStatus === "TRUE" ? "✅ diaktifkan" : "🔒 dinonaktifkan"}!`, "success");
+        fetchToken(); // refresh dari server untuk sinkron
       } else {
+        // Rollback jika gagal
+        setDaftarToken(prev => prev.map(t =>
+          t.mapel === mapel && t.asesmen === asesmen && t.token === token
+            ? { ...t, aktif: currentStatus }
+            : t
+        ));
         addToast(result.message || "Gagal mengubah status token", "error");
       }
     } catch (error) {
       console.error(error);
+      // Rollback jika error
+      setDaftarToken(prev => prev.map(t =>
+        t.mapel === mapel && t.asesmen === asesmen && t.token === token
+          ? { ...t, aktif: currentStatus }
+          : t
+      ));
       addToast("Gagal mengubah status token", "error");
     }
   };
@@ -977,17 +1001,7 @@ function TabMapel({ scriptUrl, addToast, mapelList, setMapelList, asesmenList, s
     if (!editTokenValue.trim()) return addToast("Token tidak boleh kosong!", "error");
     setEditSaving(true);
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const res = await fetch(url, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "simpanToken",
-          mapel: editModal.mapel,
-          asesmen: editModal.asesmen,
-          token: editTokenValue.toUpperCase()
-        })
-      });
-      const d = await res.json();
+      const d = await FS.editToken({ mapel:editModal.mapel, asesmen:editModal.asesmen, tokenLama:editModal.token, tokenBaru:editTokenValue.toUpperCase() });
       if (d.status === "success") {
         addToast("Token berhasil diubah!", "success");
         fetchToken();
@@ -1259,12 +1273,160 @@ function RichTextEditor({ value, onChange, placeholder = "Tulis soal di sini..."
 // ============================================================
 // TAB INPUT SOAL (LENGKAP)
 // ============================================================
+// ===== KOMPONEN INSERT GAMBAR =====
+// Mendukung URL langsung, Google Drive URL, dan upload file (auto-compress ke WebP ≤200KB)
+function ImageInserter({ gambar, setGambar, addToast }) {
+  const [mode, setMode] = useState(null); // null | "url" | "upload"
+  const [urlInput, setUrlInput] = useState(gambar || "");
+  const [compressing, setCompressing] = useState(false);
+  const [preview, setPreview] = useState(gambar || null);
+  const fileRef = useRef(null);
+
+  // Kompresi gambar ke WebP ≤ targetKB
+  const compressToWebP = (file, targetKB = 200) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_SIDE = 1200;
+        let w = img.width, h = img.height;
+        if (w > MAX_SIDE || h > MAX_SIDE) {
+          if (w > h) { h = Math.round(h * MAX_SIDE / w); w = MAX_SIDE; }
+          else { w = Math.round(w * MAX_SIDE / h); h = MAX_SIDE; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+
+        // Binary search kualitas agar ≤ targetKB
+        let lo = 0.1, hi = 0.92, best = null;
+        const tryQuality = q => canvas.toDataURL("image/webp", q);
+        for (let i = 0; i < 8; i++) {
+          const mid = (lo + hi) / 2;
+          const data = tryQuality(mid);
+          const kb = Math.round((data.length * 3) / 4 / 1024);
+          if (kb <= targetKB) { best = data; lo = mid; }
+          else hi = mid;
+        }
+        if (!best) best = tryQuality(0.1); // fallback kualitas minimum
+        resolve(best);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return addToast("File harus berupa gambar!", "error");
+    const origKB = Math.round(file.size / 1024);
+    setCompressing(true);
+    addToast(`⏳ Mengkompresi gambar (${origKB}KB → WebP ≤200KB)...`, "info");
+    try {
+      const webpData = await compressToWebP(file, 200);
+      const finalKB = Math.round((webpData.length * 3) / 4 / 1024);
+      setGambar(webpData);
+      setPreview(webpData);
+      setMode(null);
+      addToast(`✅ Gambar dikompres: ${origKB}KB → ${finalKB}KB (WebP)`, "success");
+    } catch {
+      addToast("Gagal memproses gambar.", "error");
+    } finally {
+      setCompressing(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleUrlConfirm = () => {
+    if (!urlInput.trim()) return addToast("URL tidak boleh kosong!", "error");
+    setGambar(urlInput.trim());
+    setPreview(urlInput.trim());
+    setMode(null);
+    addToast("✅ URL gambar disimpan", "success");
+  };
+
+  const handleRemove = () => {
+    setGambar(""); setPreview(null); setUrlInput(""); setMode(null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#003082" }}>🖼 Gambar Soal</span>
+        <span className="text-xs text-slate-400">(opsional)</span>
+      </div>
+
+      {/* Tombol insert */}
+      {!preview && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode(mode === "url" ? null : "url")}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold transition-colors"
+            style={{ background: mode === "url" ? "#003082" : "#eff6ff", color: mode === "url" ? "#fff" : "#003082", border: "1.5px solid #93c5fd", borderRadius: "0" }}
+          >
+            🔗 Dari URL
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode(mode === "upload" ? null : "upload"); if (mode !== "upload") setTimeout(() => fileRef.current?.click(), 50); }}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold transition-colors"
+            style={{ background: mode === "upload" ? "#CC0000" : "#fef2f2", color: mode === "upload" ? "#fff" : "#CC0000", border: "1.5px solid #fca5a5", borderRadius: "0" }}
+            disabled={compressing}
+          >
+            {compressing ? <><span className="w-3 h-3 border-2 border-red-300 border-t-red-600 rounded-full animate-spin inline-block" /> Mengkompresi...</> : "📤 Upload & Kompresi"}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+        </div>
+      )}
+
+      {/* Input URL */}
+      {mode === "url" && !preview && (
+        <div className="mt-2 flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleUrlConfirm()}
+            placeholder="https://drive.google.com/... atau URL gambar langsung"
+            className={inp + " flex-1"}
+            autoFocus
+          />
+          <button onClick={handleUrlConfirm} className={btn("blue")}>✓ Simpan</button>
+          <button onClick={() => setMode(null)} className={btn("slate")}>✕</button>
+        </div>
+      )}
+
+      {/* Preview gambar */}
+      {preview && (
+        <div className="mt-2 relative inline-block">
+          <div style={{ border: "2px solid #e2e8f0", borderRadius: "0", overflow: "hidden", maxWidth: "320px" }}>
+            <GambarSoal url={preview} />
+          </div>
+          <button
+            onClick={handleRemove}
+            className="absolute top-1 right-1 text-white text-xs font-bold px-1.5 py-0.5"
+            style={{ background: "#CC0000", borderRadius: "0" }}
+            title="Hapus gambar"
+          >✕</button>
+          <p className="text-xs text-slate-400 mt-1">
+            {gambar?.startsWith("data:") ? "📦 Gambar WebP (tersimpan base64)" : "🔗 Gambar dari URL"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
   mapelList = mapelList || DEFAULT_MAPEL;
   asesmenList = asesmenList || DEFAULT_ASESMEN;
   const [soal, setSoal] = useState("");
   const [gambar, setGambar] = useState("");
-  const [showPreview, setShowPreview] = useState(false);
   const [point, setPoint] = useState(10);
   const [mapel, setMapel] = useState(mapelList[0]);
   const [asesmen, setAsesmen] = useState(asesmenList[0]);
@@ -1330,17 +1492,15 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
     
     setLoading(true);
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      const r = await fetch(url, { method: "POST", body: JSON.stringify(payload) });
-      const d = await r.json();
+      const d = await FS.tambahSoal(payload);
       if (d.status === "success") {
+        FS.updateSoalCounter(1);
         addToast("Soal berhasil disimpan! ✅", "success");
         setSoal("");
         setGambar("");
         setOpsi(["", "", "", ""]);
         setJawabanBenar([]);
         setJawabanReferensi("");
-        setShowPreview(false);
         if (jenisSoal !== "Uraian/Esai") setPoint(10);
         else setPoint(0);
       } else addToast(d.message || "Gagal menyimpan", "error");
@@ -1399,20 +1559,9 @@ function TabInputSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
             placeholder="Tulis soal di sini... Gunakan toolbar untuk bold, list, atau formula $$rumus$$"
           />
         </Field>
-        
-        <Field label="URL Gambar (opsional)" hint="Google Drive atau URL langsung">
-          <div className="flex gap-2">
-            <input 
-              type="url" 
-              value={gambar} 
-              onChange={e => { setGambar(e.target.value); setShowPreview(false); }} 
-              placeholder="https://drive.google.com/file/d/..." 
-              className={inp + " flex-1"} 
-            />
-            {gambar && <button onClick={() => setShowPreview(v => !v)} className={btn("slate")}>{showPreview ? "Tutup" : "👁 Preview"}</button>}
-          </div>
-          {showPreview && gambar && <div className="mt-2 overflow-hidden rounded-xl"><GambarSoal url={gambar} /></div>}
-        </Field>
+
+        {/* Insert Gambar */}
+        <ImageInserter gambar={gambar} setGambar={setGambar} addToast={addToast} />
         
         {/* Opsi Jawaban - hanya untuk soal non-esai */}
         {jenisSoal !== "Uraian/Esai" && (
@@ -1495,6 +1644,469 @@ const mapelKodeMap = {
 };
 function getMapelKode(mapel) { return mapelKodeMap[mapel] || mapel.replace(/\s+/g,"").substring(0,8).toUpperCase(); }
 
+// ================================================================
+// TAB VIEW SOAL — pratinjau + edit soal guru
+// ================================================================
+function TabViewSoal({ scriptUrl, addToast, mapelList, asesmenList }) {
+  const [filterMapel, setFilterMapel] = useState(mapelList[0] || "");
+  const [filterAsesmen, setFilterAsesmen] = useState(asesmenList[0] || "");
+  const [soalList, setSoalList] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [expandId, setExpandId] = useState(null);
+  const [hapusId, setHapusId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // --- State edit soal ---
+  const [editId, setEditId] = useState(null);       // id soal yang sedang diedit
+  const [editData, setEditData] = useState(null);   // salinan data soal untuk diedit
+  const [saving, setSaving] = useState(false);
+
+  const badgeJenis = {
+    "Pilihan Ganda":         { bg: "#eff6ff", color: "#003082", border: "#93c5fd" },
+    "Pilihan Ganda Kompleks":{ bg: "#f5f3ff", color: "#7c3aed", border: "#c4b5fd" },
+    "Benar/Salah Kompleks":  { bg: "#fff7ed", color: "#b45309", border: "#fcd34d" },
+    "Uraian/Esai":           { bg: "#f0fdf4", color: "#15803d", border: "#86efac" },
+  };
+
+  const parseArr = (raw) => { try { return JSON.parse(raw || "[]"); } catch { return []; } };
+
+  // ---- Fetch ----
+  const fetchSoal = async () => {
+    setLoading(true); setSoalList([]);
+    try {
+      const d = await FS.getSoalGuru({ mapel:filterMapel, asesmen:filterAsesmen });
+      if (d.status === "success") setSoalList(d.soal || []);
+      else addToast(d.message || "Gagal memuat soal", "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+    finally { setLoading(false); }
+  };
+
+  // ---- Hapus ----
+  const handleHapusSoal = async (id) => {
+    setDeleting(true);
+    try {
+      const d = await FS.hapusSoal({ id, mapel:filterMapel, asesmen:filterAsesmen });
+      if (d.status === "success") {
+        FS.updateSoalCounter(-1);
+        addToast("✅ Soal berhasil dihapus", "success");
+        setSoalList(prev => prev.filter(s => s.id !== id));
+        setHapusId(null);
+        if (expandId === id) setExpandId(null);
+      } else addToast(d.message || "Gagal menghapus soal", "error");
+    } catch { addToast("Gagal terhubung", "error"); }
+    finally { setDeleting(false); }
+  };
+
+  // ---- Buka modal edit ----
+  const openEdit = (s) => {
+    setEditId(s.id);
+    setEditData({
+      soal: s.soal || "",
+      gambar: s.gambar || "",
+      jenisSoal: s.jenisSoal || "Pilihan Ganda",
+      point: s.point ?? 10,
+      opsi: parseArr(s.opsi),
+      jawabanBenar: parseArr(s.jawabanBenar),
+      jawabanReferensi: s.jawabanReferensi || "",
+    });
+    setExpandId(null);
+  };
+
+  const closeEdit = () => { setEditId(null); setEditData(null); };
+
+  // Helper update editData
+  const setED = (patch) => setEditData(prev => ({ ...prev, ...patch }));
+
+  const handleOpsiChange = (i, v) => {
+    const a = [...editData.opsi]; a[i] = v; setED({ opsi: a });
+  };
+  const handleAddOpsi = () => setED({ opsi: [...editData.opsi, ""] });
+  const handleRemoveOpsi = (i) => {
+    const removed = editData.opsi[i];
+    setED({
+      opsi: editData.opsi.filter((_, idx) => idx !== i),
+      jawabanBenar: editData.jawabanBenar.filter(j => j !== removed),
+    });
+  };
+  const handleJawabanPG  = (v) => setED({ jawabanBenar: [v] });
+  const handleJawabanPGK = (v) => setED({ jawabanBenar: editData.jawabanBenar.includes(v) ? editData.jawabanBenar.filter(x => x !== v) : [...editData.jawabanBenar, v] });
+  const handleJawabanBS  = (idx, val) => {
+    const arr = [...(editData.jawabanBenar.length === editData.opsi.length ? editData.jawabanBenar : editData.opsi.map(() => ""))];
+    arr[idx] = val; setED({ jawabanBenar: arr });
+  };
+  const handleGantiJenis = (j) => {
+    setED({
+      jenisSoal: j,
+      opsi: j === "Benar/Salah Kompleks" ? ["", "", ""] : j === "Uraian/Esai" ? [] : ["", "", "", ""],
+      jawabanBenar: [],
+      point: j === "Uraian/Esai" ? 0 : 10,
+    });
+  };
+
+  // ---- Simpan edit ----
+  const handleSaveEdit = async () => {
+    if (!editData.soal.trim()) return addToast("Soal tidak boleh kosong!", "error");
+    if (editData.jenisSoal !== "Uraian/Esai") {
+      if (editData.opsi.filter(o => o.trim()).length < 2) return addToast("Minimal 2 opsi!", "error");
+      if (editData.jawabanBenar.length === 0) return addToast("Pilih jawaban benar!", "error");
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        id: editId,
+        mapel: filterMapel,
+        asesmen: filterAsesmen,
+        soal: editData.soal,
+        gambar: editData.gambar,
+        jenisSoal: editData.jenisSoal,
+        opsi: editData.jenisSoal === "Uraian/Esai" ? "[]" : JSON.stringify(editData.opsi.filter(o => o.trim())),
+        jawabanBenar: editData.jenisSoal === "Uraian/Esai" ? "[]" : JSON.stringify(editData.jawabanBenar),
+        jawabanReferensi: editData.jenisSoal === "Uraian/Esai" ? editData.jawabanReferensi : "",
+        point: editData.jenisSoal === "Uraian/Esai" ? 0 : Number(editData.point),
+      };
+      const d = await FS.editSoal(payload);
+      if (d.status === "success") {
+        addToast("✅ Soal berhasil diperbarui!", "success");
+        // Update soal di list lokal
+        setSoalList(prev => prev.map(s => s.id === editId ? {
+          ...s,
+          soal: editData.soal,
+          gambar: editData.gambar,
+          jenisSoal: editData.jenisSoal,
+          point: editData.point,
+          opsi: payload.opsi,
+          jawabanBenar: payload.jawabanBenar,
+          jawabanReferensi: payload.jawabanReferensi,
+        } : s));
+        closeEdit();
+      } else addToast(d.message || "Gagal menyimpan", "error");
+    } catch { addToast("Gagal terhubung ke server", "error"); }
+    finally { setSaving(false); }
+  };
+
+  // ---- Render opsi di mode VIEW ----
+  const renderOpsiView = (s, opsiArr, jawabanArr) => {
+    if (s.jenisSoal === "Pilihan Ganda" || s.jenisSoal === "Pilihan Ganda Kompleks") {
+      return opsiArr.map((o, oi) => {
+        const isCorrect = s.jenisSoal === "Pilihan Ganda" ? jawabanArr[0] === o : jawabanArr.includes(o);
+        return (
+          <div key={oi} className="flex items-start gap-2 px-3 py-2" style={{ background: isCorrect ? "#f0fdf4" : "#f8fafc", border: `1px solid ${isCorrect ? "#86efac" : "#e2e8f0"}`, borderRadius: "0" }}>
+            <span className="w-6 h-6 flex items-center justify-center text-xs font-black flex-shrink-0" style={{ background: isCorrect ? "#16a34a" : "#003082", color: "#fff", borderRadius: "0" }}>{String.fromCharCode(65 + oi)}</span>
+            <span className="text-sm flex-1"><HtmlMathText html={o} /></span>
+            {isCorrect && <span className="text-xs font-bold" style={{ color: "#16a34a" }}>✓ Benar</span>}
+          </div>
+        );
+      });
+    }
+    if (s.jenisSoal === "Benar/Salah Kompleks") {
+      return opsiArr.map((o, oi) => (
+        <div key={oi} className="flex items-center gap-3 px-3 py-2" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "0" }}>
+          <span className="text-xs font-bold text-slate-500 w-5">{oi + 1}.</span>
+          <span className="text-sm flex-1"><HtmlMathText html={o} /></span>
+          <span className="text-xs font-black px-2 py-1" style={{ background: jawabanArr[oi] === "Benar" ? "#16a34a" : jawabanArr[oi] === "Salah" ? "#CC0000" : "#e2e8f0", color: jawabanArr[oi] ? "#fff" : "#94a3b8", borderRadius: "0" }}>
+            {jawabanArr[oi] || "—"}
+          </span>
+        </div>
+      ));
+    }
+    return null;
+  };
+
+  // ---- Render opsi di mode EDIT ----
+  const renderOpsiEdit = () => {
+    if (!editData) return null;
+    const { jenisSoal, opsi, jawabanBenar } = editData;
+    if (jenisSoal === "Uraian/Esai") return null;
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-bold uppercase tracking-wide" style={{ color: "#003082" }}>Opsi Jawaban</p>
+          <button onClick={handleAddOpsi} className="text-xs px-3 py-1 font-medium" style={{ background: "#eff6ff", color: "#003082", borderRadius: "0", border: "1px solid #93c5fd" }}>+ Tambah Opsi</button>
+        </div>
+        <div className="space-y-2">
+          {opsi.map((o, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="w-7 h-7 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-2" style={{ background: "#003082", color: "#fff", borderRadius: "0" }}>
+                {String.fromCharCode(65 + i)}
+              </span>
+              <div className="flex-1">
+                <textarea
+                  value={o}
+                  onChange={e => handleOpsiChange(i, e.target.value)}
+                  rows={2}
+                  className="w-full border-2 border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-400 resize-none"
+                  style={{ borderRadius: "0" }}
+                  placeholder={`Opsi ${String.fromCharCode(65 + i)}`}
+                />
+              </div>
+              {jenisSoal === "Pilihan Ganda" && (
+                <input type="radio" name="edit_pg" checked={jawabanBenar[0] === o && o.trim() !== ""} onChange={() => handleJawabanPG(o)} className="w-4 h-4 mt-3" title="Jawaban benar" />
+              )}
+              {jenisSoal === "Pilihan Ganda Kompleks" && (
+                <input type="checkbox" checked={jawabanBenar.includes(o) && o.trim() !== ""} onChange={() => handleJawabanPGK(o)} className="w-4 h-4 mt-3" title="Jawaban benar" />
+              )}
+              {jenisSoal === "Benar/Salah Kompleks" && (
+                <div className="flex gap-1 flex-shrink-0 mt-2">
+                  <button onClick={() => handleJawabanBS(i, "Benar")} className="text-xs px-2 py-1 font-bold" style={{ background: jawabanBenar[i] === "Benar" ? "#16a34a" : "#e2e8f0", color: jawabanBenar[i] === "Benar" ? "#fff" : "#475569", borderRadius: "0" }}>B</button>
+                  <button onClick={() => handleJawabanBS(i, "Salah")} className="text-xs px-2 py-1 font-bold" style={{ background: jawabanBenar[i] === "Salah" ? "#CC0000" : "#e2e8f0", color: jawabanBenar[i] === "Salah" ? "#fff" : "#475569", borderRadius: "0" }}>S</button>
+                </div>
+              )}
+              {opsi.length > 2 && (
+                <button onClick={() => handleRemoveOpsi(i)} className="text-red-400 hover:text-red-600 text-xl mt-1.5 flex-shrink-0">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+        {jenisSoal === "Pilihan Ganda" && <p className="text-xs text-slate-400 mt-1">🔘 Pilih radio = jawaban benar</p>}
+        {jenisSoal === "Pilihan Ganda Kompleks" && <p className="text-xs text-slate-400 mt-1">☑️ Centang semua jawaban benar</p>}
+        {jenisSoal === "Benar/Salah Kompleks" && <p className="text-xs text-slate-400 mt-1">Klik B/S untuk menentukan jawaban tiap pernyataan</p>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Lihat & Edit Soal</h2>
+        <p className="text-sm text-slate-500">Pratinjau, edit, dan hapus soal — HTML & rumus ditampilkan sempurna</p>
+      </div>
+
+      {/* Filter */}
+      <div className="bg-white p-4 flex flex-wrap gap-3 items-end" style={{ border: "1px solid #e2e8f0", borderLeft: "4px solid #003082", borderRadius: "0" }}>
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Mata Pelajaran</label>
+          <select value={filterMapel} onChange={e => setFilterMapel(e.target.value)} className={inp + " w-48"}>
+            {mapelList.map(m => <option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Asesmen</label>
+          <select value={filterAsesmen} onChange={e => setFilterAsesmen(e.target.value)} className={inp + " w-48"}>
+            {asesmenList.map(a => <option key={a}>{a}</option>)}
+          </select>
+        </div>
+        <button onClick={fetchSoal} disabled={loading} className={btn("blue") + " disabled:opacity-50"}>
+          {loading ? "⏳ Memuat..." : "🔍 Tampilkan Soal"}
+        </button>
+      </div>
+
+      {/* Info count */}
+      {soalList.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-bold" style={{ color: "#003082" }}>{soalList.length} soal ditemukan</span>
+          {["Pilihan Ganda","Pilihan Ganda Kompleks","Benar/Salah Kompleks","Uraian/Esai"].map(j => {
+            const c = soalList.filter(s => s.jenisSoal === j).length;
+            if (!c) return null;
+            const bj = badgeJenis[j] || {};
+            return <span key={j} className="text-xs font-bold px-2 py-0.5" style={{ background: bj.bg, color: bj.color, border: `1px solid ${bj.border}`, borderRadius: "0" }}>{j}: {c}</span>;
+          })}
+        </div>
+      )}
+
+      {/* Daftar soal */}
+      {loading && <div className="text-center py-10 text-slate-400">⏳ Memuat soal...</div>}
+      {!loading && soalList.length === 0 && (
+        <div className="text-center py-14 text-slate-400">
+          <p className="text-3xl mb-2">📋</p>
+          <p>Pilih mapel &amp; asesmen lalu klik <strong>Tampilkan Soal</strong>.</p>
+        </div>
+      )}
+
+      {!loading && soalList.length > 0 && (
+        <div className="space-y-3">
+          {soalList.map((s, i) => {
+            const opsiArr    = parseArr(s.opsi);
+            const jawabanArr = parseArr(s.jawabanBenar);
+            const bj = badgeJenis[s.jenisSoal] || badgeJenis["Pilihan Ganda"];
+            const isExpand   = expandId === s.id;
+
+            return (
+              <div key={s.id} className="bg-white" style={{ border: "1px solid #e2e8f0", borderLeft: `4px solid ${bj.color}`, borderRadius: "0" }}>
+
+                {/* ── Header kartu ── */}
+                <div className="flex items-start justify-between gap-3 px-4 py-3" style={{ borderBottom: "1px solid #f1f5f9" }}>
+                  <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                    <span className="font-black text-slate-700 text-sm flex-shrink-0">#{i + 1}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 flex-shrink-0" style={{ background: bj.bg, color: bj.color, border: `1px solid ${bj.border}`, borderRadius: "0" }}>{s.jenisSoal}</span>
+                    {s.jenisSoal !== "Uraian/Esai" && (
+                      <span className="text-xs px-2 py-0.5 font-bold flex-shrink-0" style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #86efac", borderRadius: "0" }}>⭐ {s.point} poin</span>
+                    )}
+                    {s.gambar && (
+                      <span className="text-xs px-2 py-0.5 font-medium flex-shrink-0" style={{ background: "#fff7ed", color: "#b45309", border: "1px solid #fcd34d", borderRadius: "0" }}>🖼 Gambar</span>
+                    )}
+                  </div>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => { openEdit(s); }}
+                      className="text-xs font-bold px-2 py-1"
+                      style={{ background: "#fffbeb", color: "#b45309", borderRadius: "0", border: "1px solid #fcd34d" }}
+                    >✏️ Edit</button>
+                    <button
+                      onClick={() => setExpandId(isExpand ? null : s.id)}
+                      className="text-xs font-bold px-2 py-1"
+                      style={{ background: isExpand ? "#003082" : "#eff6ff", color: isExpand ? "#fff" : "#003082", borderRadius: "0", border: "1px solid #93c5fd" }}
+                    >{isExpand ? "▲ Tutup" : "▼ Detail"}</button>
+                    <button
+                      onClick={() => setHapusId(s.id)}
+                      className="text-xs font-bold px-2 py-1"
+                      style={{ background: "#fef2f2", color: "#CC0000", borderRadius: "0", border: "1px solid #fca5a5" }}
+                    >🗑</button>
+                  </div>
+                </div>
+
+                {/* ── Preview singkat soal (selalu tampil, render HTML+KaTeX) ── */}
+                <div className="px-4 py-3 text-sm text-slate-800 leading-relaxed">
+                  <HtmlMathText html={s.soal} />
+                </div>
+
+                {/* ── Detail expand ── */}
+                {isExpand && (
+                  <div className="px-4 pb-5 space-y-4" style={{ borderTop: "2px dashed #e2e8f0", paddingTop: "14px" }}>
+
+                    {/* Gambar */}
+                    {s.gambar && (
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#003082" }}>🖼 Gambar Soal</p>
+                        <GambarSoal url={s.gambar} />
+                      </div>
+                    )}
+
+                    {/* Pilihan jawaban */}
+                    {opsiArr.length > 0 && (
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#003082" }}>Pilihan Jawaban</p>
+                        <div className="space-y-1.5">
+                          {renderOpsiView(s, opsiArr, jawabanArr)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Referensi esai */}
+                    {s.jenisSoal === "Uraian/Esai" && s.jawabanReferensi && (
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: "#003082" }}>📝 Kunci Referensi Guru</p>
+                        <div className="text-sm text-slate-700 p-3" style={{ background: "#fff7ed", border: "1px solid #fcd34d", borderRadius: "0" }}>
+                          <HtmlMathText html={s.jawabanReferensi} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ============================================================
+          MODAL EDIT SOAL
+      ============================================================ */}
+      {editId && editData && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-3 overflow-y-auto" onClick={e => { if (e.target === e.currentTarget) closeEdit(); }}>
+          <div className="bg-white w-full max-w-2xl shadow-2xl my-4" style={{ border: "2px solid #003082", borderRadius: "0" }}>
+
+            {/* Header modal */}
+            <div className="flex items-center justify-between px-5 py-4" style={{ background: "#003082" }}>
+              <div>
+                <h3 className="text-white font-black uppercase tracking-wide">✏️ Edit Soal</h3>
+                <p className="text-blue-200 text-xs mt-0.5">#{soalList.findIndex(s => s.id === editId) + 1} — {filterMapel} / {filterAsesmen}</p>
+              </div>
+              <button onClick={closeEdit} className="text-white text-xl font-bold hover:opacity-70">✕</button>
+            </div>
+
+            <div className="p-5 space-y-5">
+
+              {/* Jenis soal & point */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Jenis Soal</label>
+                  <select value={editData.jenisSoal} onChange={e => handleGantiJenis(e.target.value)} className={inp}>
+                    {JENIS_SOAL_LENGKAP.map(j => <option key={j}>{j}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Point / Nilai</label>
+                  <input
+                    type="number"
+                    value={editData.point}
+                    onChange={e => setED({ point: Number(e.target.value) })}
+                    min={editData.jenisSoal === "Uraian/Esai" ? 0 : 1}
+                    disabled={editData.jenisSoal === "Uraian/Esai"}
+                    className={inp}
+                    style={{ background: editData.jenisSoal === "Uraian/Esai" ? "#f8fafc" : undefined }}
+                  />
+                </div>
+              </div>
+
+              {/* Pertanyaan — RichTextEditor */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Pertanyaan</label>
+                <RichTextEditor
+                  value={editData.soal}
+                  onChange={v => setED({ soal: v })}
+                  placeholder="Tulis soal di sini..."
+                />
+                {/* Preview render HTML+KaTeX */}
+                {editData.soal && (
+                  <div className="mt-2 p-3 text-sm text-slate-800 leading-relaxed" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: "0" }}>
+                    <p className="text-xs font-bold text-green-700 mb-1">👁 Preview (tampilan siswa):</p>
+                    <HtmlMathText html={editData.soal} />
+                  </div>
+                )}
+              </div>
+
+              {/* Gambar */}
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Gambar (opsional)</label>
+                <ImageInserter gambar={editData.gambar} setGambar={v => setED({ gambar: v })} addToast={addToast} />
+              </div>
+
+              {/* Opsi jawaban */}
+              {renderOpsiEdit()}
+
+              {/* Referensi esai */}
+              {editData.jenisSoal === "Uraian/Esai" && (
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wide block mb-1" style={{ color: "#003082" }}>Kunci Referensi (opsional)</label>
+                  <textarea
+                    value={editData.jawabanReferensi}
+                    onChange={e => setED({ jawabanReferensi: e.target.value })}
+                    rows={3}
+                    className={inp + " resize-none"}
+                    placeholder="Tuliskan jawaban ideal / kata kunci sebagai referensi koreksi..."
+                  />
+                </div>
+              )}
+
+              {/* Tombol aksi */}
+              <div className="flex gap-3 pt-2" style={{ borderTop: "1px solid #e2e8f0" }}>
+                <button onClick={closeEdit} className={btn("slate") + " flex-1"}>Batal</button>
+                <button onClick={handleSaveEdit} disabled={saving} className={btn("blue") + " flex-1"}>
+                  {saving ? "⏳ Menyimpan..." : "💾 Simpan Perubahan"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi hapus soal */}
+      {hapusId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm p-6 shadow-2xl" style={{ border: "2px solid #CC0000", borderRadius: "0" }}>
+            <p className="font-black text-lg mb-2" style={{ color: "#CC0000" }}>🗑 Hapus Soal?</p>
+            <p className="text-sm text-slate-600 mb-5">Soal ini akan dihapus permanen dari spreadsheet dan tidak bisa dikembalikan.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setHapusId(null)} className={btn("slate") + " flex-1"}>Batal</button>
+              <button onClick={() => handleHapusSoal(hapusId)} disabled={deleting} className={btn("red") + " flex-1"}>{deleting ? "Menghapus..." : "Ya, Hapus"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabRekap({ scriptUrl, addToast, mapelList, asesmenList }) {
   mapelList = mapelList || DEFAULT_MAPEL;
   asesmenList = asesmenList || DEFAULT_ASESMEN;
@@ -1512,45 +2124,42 @@ function TabRekap({ scriptUrl, addToast, mapelList, asesmenList }) {
   const [bobotEsai, setBobotEsai] = useState(20);
   const [bobotLoading, setBobotLoading] = useState(false);
   const [bobotSaving, setBobotSaving] = useState(false);
+  const [konfirmHapus, setKonfirmHapus] = useState(null); // { nisn, mapel, asesmen, waktu, nama }
+  const [deletingHasil, setDeletingHasil] = useState(false);
+
+  const handleHapusHasil = async () => {
+    if (!konfirmHapus) return;
+    setDeletingHasil(true);
+    try {
+      const d = await FS.hapusHasil({ nisn:konfirmHapus.nisn, mapel:konfirmHapus.mapel, asesmen:konfirmHapus.asesmen, waktu:konfirmHapus.waktu });
+      if (d.status === "success") {
+        addToast("✅ Data hasil berhasil dihapus", "success");
+        setHasil(prev => prev.filter(h => !(h.nisn === konfirmHapus.nisn && h.mapel === konfirmHapus.mapel && h.asesmen === konfirmHapus.asesmen && h.waktu === konfirmHapus.waktu)));
+        setKonfirmHapus(null);
+      } else addToast(d.message || "Gagal menghapus", "error");
+    } catch { addToast("Gagal terhubung", "error"); }
+    finally { setDeletingHasil(false); }
+  };
 
   const loadKKM = async () => {
-    const data = await fetchKKM(scriptUrl);
+    const data = await fetchKKM();
     setKkmData(data);
   };
  const loadBobot = async () => {
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) return;
   setBobotLoading(true);
   try {
-    const res = await fetch(`${url}?action=getBobotNilai`);
-    const data = await res.json();
+    const data = await FS.getBobotNilai();
     if (data.status === "success") {
-      const bobotObjVal = Number(data.data.bobot_objektif) || 80;
-      const bobotEsaiVal = Number(data.data.bobot_esai) || 20;
-      setBobotObj(bobotObjVal);
-      setBobotEsai(bobotEsaiVal);
+      setBobotObj(Number(data.data.bobot_objektif) || 80);
+      setBobotEsai(Number(data.data.bobot_esai) || 20);
     }
   } catch {} finally { setBobotLoading(false); }
 };
 
 const saveBobot = async () => {
   setBobotSaving(true);
-  const url = scriptUrl || APPS_SCRIPT_URL;
-  if (url.includes("YOUR_APPS_SCRIPT_ID")) {
-    addToast("Demo: Bobot tersimpan lokal", "info");
-    setBobotSaving(false);
-    return;
-  }
   try {
-    const res = await fetch(url, { 
-      method: "POST", 
-      body: JSON.stringify({ 
-        action: "simpanBobotNilai", 
-        bobot_objektif: bobotObj, 
-        bobot_esai: bobotEsai 
-      }) 
-    });
-    const d = await res.json();
+    const d = await FS.simpanBobotNilai({ bobot_objektif: bobotObj, bobot_esai: bobotEsai });
     if (d.status === "success") addToast("Bobot berhasil disimpan!", "success");
     else addToast("Gagal menyimpan bobot", "error");
   } catch { addToast("Gagal terhubung ke server", "error"); }
@@ -1560,25 +2169,16 @@ const saveBobot = async () => {
   useEffect(() => { loadKKM(); loadBobot(); }, []);
 
   const fetchHasil = async (targetMapel = "Semua") => {
-    const url = scriptUrl || APPS_SCRIPT_URL;
-    if (url.includes("YOUR_APPS_SCRIPT_ID")) { setHasil([]); return; }
     setLoading(true);
     try {
       if (targetMapel === "Semua") {
-        const allData = [];
-        await Promise.all(mapelList.map(async (m) => {
-          const kode = getMapelKode(m);
-          try { const r = await fetch(`${url}?action=getHasilPerMapel&kode=${encodeURIComponent(kode)}`); const d = await r.json(); if (d.status === "success" && d.data?.length > 0) allData.push(...d.data); } catch {}
-        }));
-        setHasil(allData);
+        const d = await FS.getHasil();
+        setHasil(d.status === "success" ? (d.data || []) : []);
       } else {
-        const kode = getMapelKode(targetMapel);
-        const r = await fetch(`${url}?action=getHasilPerMapel&kode=${encodeURIComponent(kode)}`);
-        const d = await r.json();
-        if (d.status === "success") setHasil(d.data || []);
-        else setHasil([]);
+        const d = await FS.getHasilPerMapel({ mapel: targetMapel });
+        setHasil(d.status === "success" ? (d.data || []) : []);
       }
-    } catch {} finally { setLoading(false); }
+    } catch { setHasil([]); } finally { setLoading(false); }
   };
   useEffect(() => { fetchHasil(); }, []);
 
@@ -1639,12 +2239,10 @@ const saveBobot = async () => {
     if (!modalKoreksi) return;
     setSavingKoreksi(true);
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
       const totalEsai = Object.values(skorPerSoal).reduce((a,b) => a + (Number(b) || 0), 0);
       const jumlahEsai = Object.keys(skorPerSoal).length;
       const rerataSkorEsai = jumlahEsai > 0 ? Math.round(totalEsai / jumlahEsai) : 0;
-      const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanKoreksiEsai", nisn: modalKoreksi.nisn, mapel: modalKoreksi.mapel, asesmen: modalKoreksi.asesmen, waktu: modalKoreksi.waktu, skorEsai: rerataSkorEsai, detailSkorEsai: JSON.stringify(skorPerSoal) }) });
-      const d = await r.json();
+      const d = await FS.simpanKoreksiEsai({ nisn:modalKoreksi.nisn, mapel:modalKoreksi.mapel, asesmen:modalKoreksi.asesmen, waktu:modalKoreksi.waktu, skorEsai:rerataSkorEsai, detailSkorEsai:JSON.stringify(skorPerSoal) });
       if (d.status==="success") { addToast("Koreksi berhasil disimpan!", "success"); setModalKoreksi(null); setSkorPerSoal({}); fetchHasil(filterMapel); }
       else addToast(d.message||"Gagal","error");
     } catch { addToast("Gagal terhubung","error"); } finally { setSavingKoreksi(false); }
@@ -1706,7 +2304,12 @@ const saveBobot = async () => {
                   <td className="px-3 py-2.5 text-center">{!adaEsai ? <span className="text-slate-300">—</span> : sudahKoreksi ? <span className="font-bold text-green-600">{h.skorEsai}</span> : <span className="font-bold" style={{ color: "#b45309" }}>Belum</span>}</td>
                   <td className="px-3 py-2.5 text-center"><span className="font-black text-sm" style={{ color: nilaiAkhir>=kkm ? "#15803d" : nilaiAkhir>=60 ? "#b45309" : "#CC0000" }}>{nilaiAkhir}</span></td>
                   <td className="px-3 py-2.5 text-center"><span className="px-2 py-0.5 text-xs font-bold" style={{ background: keterangan==="Tuntas" ? "#f0fdf4" : "#fef2f2", color: keterangan==="Tuntas" ? "#15803d" : "#CC0000", border: `1px solid ${keterangan==="Tuntas" ? "#86efac" : "#fca5a5"}`, borderRadius: "0" }}>{keterangan}</span></td>
-                  <td className="px-3 py-2.5 text-center">{adaEsai && <button onClick={() => { setModalKoreksi(h); setSkorPerSoal({}); }} className="text-xs font-bold px-2 py-1" style={{ background: sudahKoreksi ? "#f0fdf4" : "#fff7ed", color: sudahKoreksi ? "#15803d" : "#b45309", borderRadius: "0", border: `1px solid ${sudahKoreksi ? "#86efac" : "#fcd34d"}` }}>{sudahKoreksi ? "✏️ Edit" : "📝 Koreksi"}</button>}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
+                      {adaEsai && <button onClick={() => { setModalKoreksi(h); setSkorPerSoal({}); }} className="text-xs font-bold px-2 py-1" style={{ background: sudahKoreksi ? "#f0fdf4" : "#fff7ed", color: sudahKoreksi ? "#15803d" : "#b45309", borderRadius: "0", border: `1px solid ${sudahKoreksi ? "#86efac" : "#fcd34d"}` }}>{sudahKoreksi ? "✏️" : "📝"}</button>}
+                      <button onClick={() => setKonfirmHapus(h)} className="text-xs font-bold px-2 py-1" style={{ background: "#fef2f2", color: "#CC0000", borderRadius: "0", border: "1px solid #fca5a5" }} title="Hapus data ini">🗑</button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}</tbody>
@@ -1752,85 +2355,117 @@ const saveBobot = async () => {
           </div>
         </div>
       )}
+      {konfirmHapus && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm p-6 shadow-2xl" style={{ border: "2px solid #CC0000", borderRadius: "0" }}>
+            <p className="font-black text-lg mb-1" style={{ color: "#CC0000" }}>🗑 Hapus Data Hasil?</p>
+            <p className="text-sm text-slate-600 mb-1">Data berikut akan dihapus permanen:</p>
+            <div className="p-3 mb-4 text-sm" style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: "0" }}>
+              <p className="font-bold text-slate-800">{konfirmHapus.nama} ({konfirmHapus.nisn})</p>
+              <p className="text-slate-600">{konfirmHapus.mapel} — {konfirmHapus.asesmen}</p>
+              <p className="text-slate-400 text-xs">{konfirmHapus.waktu}</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setKonfirmHapus(null)} className={btn("slate") + " flex-1"}>Batal</button>
+              <button onClick={handleHapusHasil} disabled={deletingHasil} className={btn("red") + " flex-1"}>{deletingHasil ? "Menghapus..." : "Ya, Hapus"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================
-// PENGATURAN UJIAN (dengan foto guru)
+// PENGATURAN UJIAN
 // ============================================================
-function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, addToast }) {
-  const [logoInput, setLogoInput] = useState(settings.logoUrl||"");
-  const [namaInput, setNamaInput] = useState(settings.namaSekolah||"");
-  const [namaGuruInput, setNamaGuruInput] = useState(settings.namaGuru||"");
-  const [nipGuruInput, setNipGuruInput] = useState(settings.nipGuru||"");
-  const [kotaTTDInput, setKotaTTDInput] = useState(settings.kotaTTD||"");
-  const [fotoGuruPreview, setFotoGuruPreview] = useState(settings.fotoGuru || "");
-  const [fotoGuruInput, setFotoGuruInput] = useState(settings.fotoGuru || "");
-  const [spreadsheetUrl, setSpreadsheetUrl] = useState(settings.spreadsheetUrl||"");
-  const [durasiInput, setDurasiInput] = useState(settings.durasiMenit||60);
-  const [savedSpreadsheetUrl, setSavedSpreadsheetUrl] = useState(settings.spreadsheetUrl||"");
-  const [saving, setSaving] = useState(false);
-  
-  const jam = Math.floor(durasiInput/60); 
-  const menit = Number(durasiInput)%60; 
-  const durasiDisplay = jam>0?`${jam} jam ${menit>0?menit+" menit":""}`:`${menit} menit`;
-  
-  const getInitials = () => {
-    const nama = namaGuruInput || settings.namaGuru || "Guru";
-    return nama.split(" ").map(n => n[0]).join("").toUpperCase().slice(0,2);
-  };
+function TabPengaturan({ settings, onSaveSettings, addToast }) {
+  const [logoPreview, setLogoPreview]     = useState(settings.logoUrl || "");
+  const [logoBase64, setLogoBase64]       = useState(settings.logoUrl || "");
+  const [logoConverting, setLogoConverting] = useState(false);
+  const [namaInput, setNamaInput]         = useState(settings.namaSekolah || "");
+  const [namaGuruInput, setNamaGuruInput] = useState(settings.namaGuru || "");
+  const [nipGuruInput, setNipGuruInput]   = useState(settings.nipGuru || "");
+  const [kotaTTDInput, setKotaTTDInput]   = useState(settings.kotaTTD || "");
+  const [fotoPreview, setFotoPreview]     = useState(settings.fotoGuru || "");
+  const [fotoBase64, setFotoBase64]       = useState(settings.fotoGuru || "");
+  const [durasiInput, setDurasiInput]     = useState(settings.durasiMenit || 60);
+  const [saving, setSaving]               = useState(false);
 
-  const handleFotoUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.type.match(/image\/(jpeg|jpg|png)/)) {
-      addToast("Hanya file JPG/PNG yang diperbolehkan!", "error");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      addToast("Ukuran file maksimal 2MB!", "error");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result;
-      setFotoGuruPreview(base64String);
-      setFotoGuruInput(base64String);
+  const jam = Math.floor(durasiInput / 60);
+  const menit = Number(durasiInput) % 60;
+  const durasiDisplay = jam > 0 ? `${jam} jam${menit > 0 ? " " + menit + " menit" : ""}` : `${menit} menit`;
+
+  const getInitials = () => (namaGuruInput || settings.namaGuru || "G").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+
+  // ── Konversi gambar ke WebP via canvas ──────────────────────────
+  const toWebP = (file, maxSize = 256) => new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/webp", 0.82));
     };
-    reader.readAsDataURL(file);
+    img.onerror = reject;
+    img.src = url;
+  });
+
+  // ── Upload logo sekolah (konversi webp, max 512px) ──────────────
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return addToast("File harus berupa gambar!", "error");
+    if (file.size > 5 * 1024 * 1024) return addToast("Ukuran file maks 5MB!", "error");
+    setLogoConverting(true);
+    try {
+      const webp = await toWebP(file, 512);
+      setLogoPreview(webp);
+      setLogoBase64(webp);
+      addToast("✅ Logo dikonversi ke WebP!", "success");
+    } catch { addToast("Gagal memproses gambar.", "error"); }
+    finally { setLogoConverting(false); e.target.value = ""; }
   };
 
-  const handleHapusFoto = () => {
-    setFotoGuruPreview("");
-    setFotoGuruInput("");
+  // ── Upload foto guru (konversi webp, max 256px) ─────────────────
+  const handleFotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return addToast("File harus berupa gambar!", "error");
+    if (file.size > 5 * 1024 * 1024) return addToast("Ukuran file maks 5MB!", "error");
+    try {
+      const webp = await toWebP(file, 256);
+      setFotoPreview(webp);
+      setFotoBase64(webp);
+      addToast("✅ Foto guru dikonversi ke WebP!", "success");
+    } catch { addToast("Gagal memproses foto.", "error"); }
+    finally { e.target.value = ""; }
   };
 
+  // ── Simpan ──────────────────────────────────────────────────────
   const handleSave = async () => {
     const durasi = Number(durasiInput);
-    if (!durasi||durasi<1||durasi>300) return addToast("Durasi harus 1–300 menit!","error");
-    const newSettings = { 
-      logoUrl:logoInput, 
-      namaSekolah:namaInput, 
-      namaGuru:namaGuruInput, 
-      nipGuru:nipGuruInput, 
-      kotaTTD:kotaTTDInput, 
-      durasiMenit:durasi, 
-      spreadsheetUrl,
-      fotoGuru: fotoGuruInput
+    if (!durasi || durasi < 1 || durasi > 300) return addToast("Durasi harus 1–300 menit!", "error");
+    const newSettings = {
+      logoUrl      : logoBase64,
+      namaSekolah  : namaInput,
+      namaGuru     : namaGuruInput,
+      nipGuru      : nipGuruInput,
+      kotaTTD      : kotaTTDInput,
+      durasiMenit  : durasi,
+      fotoGuru     : fotoBase64,
     };
     onSaveSettings(newSettings);
-    setSavedSpreadsheetUrl(spreadsheetUrl);
     setSaving(true);
-    const url = scriptUrl || APPS_SCRIPT_URL;
-    if (url && !url.includes("YOUR_APPS_SCRIPT_ID")) {
-      try {
-        const r = await fetch(url, { method:"POST", body:JSON.stringify({ action:"simpanPengaturan", ...newSettings }) });
-        const d = await r.json();
-        if (d.status==="success") addToast("✅ Pengaturan disimpan ke Spreadsheet!","success");
-        else addToast("Tersimpan lokal. Gagal sinkron: "+(d.message||""),"warning");
-      } catch { addToast("Tersimpan lokal. Tidak bisa terhubung ke Apps Script.","warning"); }
-    } else addToast("Pengaturan disimpan lokal.","info");
+    try {
+      const d = await FS.simpanPengaturan(newSettings);
+      if (d.status === "success") addToast("✅ Pengaturan disimpan ke Firestore!", "success");
+      else addToast("Tersimpan lokal. Gagal sinkron Firestore.", "warning");
+    } catch { addToast("Pengaturan disimpan lokal.", "info"); }
     setSaving(false);
   };
 
@@ -1838,79 +2473,120 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-black uppercase tracking-wide" style={{ color: "#003082" }}>Pengaturan Ujian</h2>
-        <p className="text-sm text-slate-500">Identitas sekolah, durasi, dan koneksi spreadsheet</p>
+        <p className="text-sm text-slate-500">Identitas sekolah, guru, dan durasi ujian</p>
       </div>
-      <div className="bg-white p-6 space-y-5" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #003082", borderRadius: "0" }}>
-        {/* Logo Sekolah */}
-        <Field label="URL Logo Sekolah" hint="💡 Google Drive: Upload → Bagikan → 'Siapa saja yang memiliki link' → Salin link">
-          <input value={logoInput} onChange={e=>setLogoInput(e.target.value)} placeholder="https://drive.google.com/file/d/..." className={inp} />
-          {logoInput && (
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex items-center justify-center p-2" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", minWidth: "64px" }}>
-                <LogoSekolah url={logoInput} className="max-h-14 max-w-16 object-contain" />
-              </div>
-              <div className="text-xs text-slate-500">
-                {isDriveUrl(logoInput) ? (extractDriveFileId(logoInput)?<p className="text-green-600">✓ File ID terdeteksi</p>:<p style={{ color: "#CC0000" }}>✗ Format URL Drive tidak dikenali</p>) : <p style={{ color: "#003082" }}>✓ URL gambar biasa</p>}
-              </div>
-            </div>
-          )}
-        </Field>
-        
-        {/* Nama Sekolah */}
-        <Field label="Nama Sekolah"><input value={namaInput} onChange={e=>setNamaInput(e.target.value)} placeholder="SD Negeri ..." className={inp} /></Field>
-        
-        {/* Nama dan NIP Guru */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Nama Guru" hint="Untuk kolom TTD PDF"><input value={namaGuruInput} onChange={e=>setNamaGuruInput(e.target.value)} placeholder="Nama lengkap guru" className={inp} /></Field>
-          <Field label="NIP Guru"><input value={nipGuruInput} onChange={e=>setNipGuruInput(e.target.value)} placeholder="198XXXXXXXX" className={inp + " font-mono"} /></Field>
-        </div>
-        
-        {/* Foto Guru - Upload File */}
-        <Field label="Foto Guru" hint="Upload foto profil guru (format JPG/PNG, maks 2MB)">
+
+      <div className="bg-white p-6 space-y-6" style={{ border: "1px solid #e2e8f0", borderTop: "3px solid #003082", borderRadius: "0" }}>
+
+        {/* ── Logo Sekolah ── */}
+        <Field label="Logo Sekolah" hint="Upload gambar (JPG/PNG/WebP/SVG) — otomatis dikonversi ke WebP">
           <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex-shrink-0">
-              {fotoGuruPreview ? (
-                <img src={fotoGuruPreview} alt="Preview Foto Guru" className="w-20 h-20 rounded-full object-cover shadow-md" style={{ border: "3px solid #CC0000" }} />
-              ) : settings.fotoGuru ? (
-                <img src={settings.fotoGuru} alt="Foto Guru" className="w-20 h-20 rounded-full object-cover shadow-md" style={{ border: "3px solid #CC0000" }} onError={(e) => { e.target.onerror = null; e.target.src = ""; }} />
-              ) : (
-                <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-md" style={{ background: "linear-gradient(135deg,#CC0000,#003082)" }}>
-                  {getInitials()}
-                </div>
+            {/* Preview */}
+            <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 80, height: 80, background: "#f8fafc", border: "2px dashed #cbd5e1" }}>
+              {logoPreview
+                ? <img src={logoPreview} alt="Logo" className="max-w-full max-h-full object-contain p-1" />
+                : <span className="text-2xl">🏫</span>
+              }
+            </div>
+            {/* Upload zone */}
+            <div className="flex-1 min-w-[200px]">
+              <label className="flex flex-col items-center justify-center gap-1 cursor-pointer py-3 px-4 transition-colors"
+                style={{ background: "#eff6ff", border: "2px dashed #93c5fd", borderRadius: "0" }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleLogoUpload({ target: { files: [f], value: "" } }); }}
+              >
+                {logoConverting
+                  ? <span className="text-xs font-bold" style={{ color: "#003082" }}>⏳ Mengkonversi...</span>
+                  : <>
+                      <span className="text-2xl">📁</span>
+                      <span className="text-xs font-bold" style={{ color: "#003082" }}>Klik atau drag & drop</span>
+                      <span className="text-xs text-slate-400">JPG · PNG · WebP · SVG · max 5MB</span>
+                    </>
+                }
+                <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              </label>
+              {logoPreview && (
+                <button onClick={() => { setLogoPreview(""); setLogoBase64(""); }} className="mt-2 text-xs font-medium" style={{ color: "#CC0000" }}>✕ Hapus logo</button>
               )}
             </div>
-            <div className="flex-1 min-w-[200px]">
-              <input type="file" accept="image/jpeg,image/png,image/jpg" onChange={handleFotoUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-sm file:font-semibold" style={{ "--file-bg": "#eff6ff", "--file-color": "#003082" }} />
-              <p className="text-xs text-slate-400 mt-1">Maksimal 2MB, format JPG/PNG</p>
-            </div>
-            {(fotoGuruPreview || settings.fotoGuru) && (
-              <button type="button" onClick={handleHapusFoto} className="text-sm px-3 py-1" style={{ color: "#CC0000", border: "1px solid #fca5a5", borderRadius: "0" }}>Hapus</button>
-            )}
           </div>
         </Field>
-        
-        {/* Kota Tanda Tangan */}
-        <Field label="Kota Penandatangan"><input value={kotaTTDInput} onChange={e=>setKotaTTDInput(e.target.value)} placeholder="Sumenep" className={inp} /></Field>
-        
-        {/* Durasi */}
-        <div className="p-5 space-y-3" style={{ background: "#fff7ed", border: "1px solid #fcd34d", borderLeft: "4px solid #d97706", borderRadius: "0" }}>
-          <div className="flex items-center gap-2"><span className="text-xl">⏱️</span><h4 className="font-bold text-sm" style={{ color: "#92400e" }}>Durasi Waktu Ujian</h4></div>
-          <div className="flex items-center gap-3"><input type="number" value={durasiInput} onChange={e=>setDurasiInput(e.target.value)} min={1} max={300} className="w-24 border-2 px-3 py-3 text-center font-extrabold text-2xl focus:outline-none bg-white" style={{ borderColor: "#f59e0b", color: "#92400e", borderRadius: "0" }} /><div><p className="text-sm font-bold" style={{ color: "#92400e" }}>menit</p><p className="text-xs" style={{ color: "#b45309" }}>= {durasiDisplay}</p></div></div>
-          <input type="range" min={10} max={180} step={5} value={durasiInput} onChange={e=>setDurasiInput(Number(e.target.value))} className="w-full accent-amber-500" />
-          <div className="flex flex-wrap gap-2">{[{l:"30 mnt",v:30},{l:"45 mnt",v:45},{l:"1 jam",v:60},{l:"1.5 jam",v:90},{l:"2 jam",v:120}].map(({l,v})=>(<button key={v} onClick={()=>setDurasiInput(v)} className="text-xs px-3 py-2 font-bold" style={{ background: Number(durasiInput)===v ? "#d97706" : "#fff", color: Number(durasiInput)===v ? "#fff" : "#b45309", border: "1px solid #fcd34d", borderRadius: "0" }}>{l}</button>))}</div>
-        </div>
-        
-        {/* Link Spreadsheet */}
-        <Field label="Link Google Spreadsheet" hint="Link spreadsheet untuk tombol akses cepat (opsional)">
-          <div className="flex gap-2"><input value={spreadsheetUrl} onChange={e=>setSpreadsheetUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className={inp + " flex-1 font-mono text-xs"} />{savedSpreadsheetUrl && <a href={savedSpreadsheetUrl} target="_blank" rel="noreferrer" className={btn("green")}>Buka ↗</a>}</div>
+
+        {/* ── Nama Sekolah ── */}
+        <Field label="Nama Sekolah">
+          <input value={namaInput} onChange={e => setNamaInput(e.target.value)} placeholder="SD Negeri ..." className={inp} />
         </Field>
-        
-        <button onClick={handleSave} disabled={saving} className={btn("blue") + " w-full py-3 text-base"}>{saving ? "Menyimpan..." : "💾 Simpan Pengaturan"}</button>
-        
+
+        {/* ── Nama & NIP Guru ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Nama Guru" hint="Untuk kolom TTD di PDF">
+            <input value={namaGuruInput} onChange={e => setNamaGuruInput(e.target.value)} placeholder="Nama lengkap guru" className={inp} />
+          </Field>
+          <Field label="NIP Guru">
+            <input value={nipGuruInput} onChange={e => setNipGuruInput(e.target.value)} placeholder="198XXXXXXXX" className={inp + " font-mono"} />
+          </Field>
+        </div>
+
+        {/* ── Foto Guru ── */}
+        <Field label="Foto Guru" hint="Upload foto profil — otomatis dikonversi ke WebP 256×256px">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex-shrink-0">
+              {fotoPreview
+                ? <img src={fotoPreview} alt="Foto Guru" className="w-20 h-20 rounded-full object-cover shadow-md" style={{ border: "3px solid #CC0000" }} />
+                : <div className="w-20 h-20 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-md" style={{ background: "linear-gradient(135deg,#CC0000,#003082)" }}>{getInitials()}</div>
+              }
+            </div>
+            <div className="flex-1 min-w-[180px] space-y-1">
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-2 text-xs font-bold"
+                style={{ background: "#fff7ed", border: "1px solid #fcd34d", color: "#b45309", borderRadius: "0", display: "inline-flex" }}>
+                📷 Upload Foto
+                <input type="file" accept="image/*" className="hidden" onChange={handleFotoUpload} />
+              </label>
+              {fotoPreview && (
+                <button onClick={() => { setFotoPreview(""); setFotoBase64(""); }} className="block text-xs font-medium" style={{ color: "#CC0000" }}>✕ Hapus foto</button>
+              )}
+            </div>
+          </div>
+        </Field>
+
+        {/* ── Kota TTD ── */}
+        <Field label="Kota Penandatangan">
+          <input value={kotaTTDInput} onChange={e => setKotaTTDInput(e.target.value)} placeholder="Sumenep" className={inp} />
+        </Field>
+
+        {/* ── Durasi ── */}
+        <div className="p-5 space-y-3" style={{ background: "#fff7ed", border: "1px solid #fcd34d", borderLeft: "4px solid #d97706", borderRadius: "0" }}>
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⏱️</span>
+            <h4 className="font-bold text-sm" style={{ color: "#92400e" }}>Durasi Waktu Ujian</h4>
+          </div>
+          <div className="flex items-center gap-3">
+            <input type="number" value={durasiInput} onChange={e => setDurasiInput(e.target.value)} min={1} max={300}
+              className="w-24 border-2 px-3 py-3 text-center font-extrabold text-2xl focus:outline-none bg-white"
+              style={{ borderColor: "#f59e0b", color: "#92400e", borderRadius: "0" }} />
+            <div>
+              <p className="text-sm font-bold" style={{ color: "#92400e" }}>menit</p>
+              <p className="text-xs" style={{ color: "#b45309" }}>= {durasiDisplay}</p>
+            </div>
+          </div>
+          <input type="range" min={10} max={180} step={5} value={durasiInput} onChange={e => setDurasiInput(Number(e.target.value))} className="w-full accent-amber-500" />
+          <div className="flex flex-wrap gap-2">
+            {[{l:"30 mnt",v:30},{l:"45 mnt",v:45},{l:"1 jam",v:60},{l:"1.5 jam",v:90},{l:"2 jam",v:120}].map(({l,v}) => (
+              <button key={v} onClick={() => setDurasiInput(v)} className="text-xs px-3 py-2 font-bold"
+                style={{ background: Number(durasiInput)===v ? "#d97706" : "#fff", color: Number(durasiInput)===v ? "#fff" : "#b45309", border: "1px solid #fcd34d", borderRadius: "0" }}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Simpan ── */}
+        <button onClick={handleSave} disabled={saving} className={btn("blue") + " w-full py-3 text-base disabled:opacity-50"}>
+          {saving ? "⏳ Menyimpan..." : "💾 Simpan Pengaturan"}
+        </button>
+
         <div className="p-4 text-xs space-y-1" style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderLeft: "4px solid #003082", borderRadius: "0" }}>
-          <p className="font-bold uppercase tracking-wide" style={{ color: "#003082" }}>🔄 Sinkron Otomatis Antar Perangkat</p>
-          <ol className="list-decimal list-inside space-y-1" style={{ color: "#1e40af" }}><li>Pengaturan disimpan ke sheet <strong>PENGATURAN</strong></li><li>Buka di HP/browser lain → otomatis termuat</li></ol>
-          <p className="mt-2" style={{ color: "#b45309" }}>⚠️ Foto guru disimpan sebagai base64 di spreadsheet (ukuran besar). Untuk performa lebih baik, gunakan URL dari Google Drive.</p>
+          <p className="font-bold uppercase tracking-wide" style={{ color: "#003082" }}>🔥 Sinkron via Firestore</p>
+          <p style={{ color: "#1e40af" }}>Pengaturan tersimpan di Firestore dan otomatis termuat di semua perangkat saat membuka halaman.</p>
+          <p className="mt-1" style={{ color: "#b45309" }}>⚠️ Logo & foto guru disimpan sebagai base64 WebP — ukuran kecil & terkompresi otomatis.</p>
         </div>
       </div>
     </div>
@@ -1920,12 +2596,13 @@ function TabPengaturan({ scriptUrl, onSaveScriptUrl, settings, onSaveSettings, a
 // ============================================================
 // GURU PANEL (sidebar)
 // ============================================================
-function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, onSaveScriptUrl, mapelList, setMapelList, asesmenList, setAsesmenList }) {
+function GuruPanel({ addToast, onLogout, settings, onSaveSettings, mapelList, setMapelList, asesmenList, setAsesmenList }) {
   const [activePage, setActivePage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navItems = [
     { id:"dashboard", icon:"🏠", label:"Dashboard" }, { id:"siswa", icon:"👤", label:"Data Siswa" },
     { id:"mapel", icon:"📚", label:"Manajemen Mapel" }, { id:"soal", icon:"✏️", label:"Input Soal" },
+    { id:"viewsoal", icon:"👁", label:"Lihat Soal" },
     { id:"rekap", icon:"📊", label:"Rekap Hasil" }, { id:"pengaturan", icon:"⚙️", label:"Pengaturan Ujian" },
   ];
   const SidebarContent = () => (
@@ -1939,7 +2616,7 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
       <div className="px-3 py-4" style={{ borderTop: "1px solid #1e3a8a" }}><button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors" style={{ color: "#fca5a5", borderRadius: "0" }}><span className="text-lg">🚪</span><span>Keluar</span></button></div>
     </div>
   );
-  const pageProps = { scriptUrl: scriptUrl||APPS_SCRIPT_URL, addToast, settings, onSaveSettings, onSaveScriptUrl, mapelList, setMapelList, asesmenList, setAsesmenList };
+  const pageProps = { addToast, settings, onSaveSettings, mapelList, setMapelList, asesmenList, setAsesmenList };
   return (
     <div className="min-h-screen flex" style={{ background: "#f1f5f9" }}>
       <aside className="hidden md:flex flex-col w-60 flex-shrink-0 fixed inset-y-0 left-0 z-30" style={{ background: "#003082" }}><SidebarContent /></aside>
@@ -1951,8 +2628,9 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
           {activePage==="siswa" && <TabSiswa {...pageProps} />}
           {activePage==="mapel" && <TabMapel {...pageProps} />}
           {activePage==="soal" && <TabInputSoal {...pageProps} />}
+          {activePage==="viewsoal" && <TabViewSoal {...pageProps} />}
           {activePage==="rekap" && <TabRekap {...pageProps} />}
-          {activePage==="pengaturan" && <TabPengaturan {...pageProps} onSaveScriptUrl={onSaveScriptUrl} />}
+          {activePage==="pengaturan" && <TabPengaturan {...pageProps} />}
         </main>
       </div>
     </div>
@@ -1962,7 +2640,7 @@ function GuruPanel({ addToast, onLogout, settings, onSaveSettings, scriptUrl, on
 // ============================================================
 // HALAMAN SISWA (login)
 // ============================================================
-function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, asesmenList = DEFAULT_ASESMEN, logoUrl }) {
+function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, asesmenList = DEFAULT_ASESMEN, logoUrl, namaSekolah }) {
   const [nisn, setNisn] = useState("");
   const [namaLookup, setNamaLookup] = useState("");
   const [kelasLookup, setKelasLookup] = useState("");
@@ -1971,6 +2649,7 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
   const [asesmen, setAsesmen] = useState(asesmenList[0]);
   const [token, setToken] = useState("");
   const [err, setErr] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   const lookupTimer = useRef(null);
 
   const handleNisnChange = (val) => {
@@ -1981,15 +2660,7 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
     lookupTimer.current = setTimeout(async () => {
       setLookupStatus("loading");
       try {
-        const url = APPS_SCRIPT_URL;
-        if (url.includes("YOUR_APPS_SCRIPT_ID")) {
-          console.error("URL Apps Script belum diganti!");
-          setLookupStatus("notfound");
-          return;
-        }
-        const fetchUrl = `${url}?action=getSiswaByNISN&nisn=${encodeURIComponent(val.trim())}`;
-        const response = await fetch(fetchUrl);
-        const data = await response.json();
+        const data = await FS.getSiswaByNISN({ nisn: val.trim() });
         if (data.status === "success" && data.data) {
           setNamaLookup(data.data.nama || "");
           setKelasLookup(data.data.kelas || "");
@@ -1997,92 +2668,179 @@ function HalamanSiswa({ onMulaiUjian, onGuruMode, mapelList = DEFAULT_MAPEL, ase
         } else {
           setLookupStatus("notfound");
         }
-      } catch (error) {
-        console.error("Fetch error:", error);
+      } catch {
         setLookupStatus("notfound");
       }
     }, 600);
   };
 
-  const handle = () => {
+  const handle = async () => {
     setErr("");
     if (!nisn.trim()) return setErr("NISN harus diisi!");
     if (!namaLookup && lookupStatus !== "found") return setErr("NISN tidak ditemukan dalam database siswa. Hubungi guru.");
     if (!token.trim()) return setErr("Token harus diisi!");
+
+    setLoginLoading(true);
+    try {
+      const data = await FS.validasiToken({ mapel, asesmen, token: token.trim() });
+      if (data.status === "error") { setErr(data.message || "Token tidak valid atau sudah dinonaktifkan!"); setLoginLoading(false); return; }
+      if (data.aktif === "FALSE") { setErr("Token ini sedang dinonaktifkan oleh guru. Hubungi gurumu."); setLoginLoading(false); return; }
+    } catch {
+      // Jika gagal fetch, biarkan lanjut
+    }
+    setLoginLoading(false);
     onMulaiUjian({ nama: namaLookup, nisn, noAbsen: kelasLookup, mapel, asesmen, token });
   };
 
+  const animationStyles = `
+    @keyframes slideUpFade {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slide-up-fade {
+      animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  `;
+
+  const [logoTapCount, setLogoTapCount] = useState(0);
+  const logoTapTimer = useRef(null);
+  const handleLogoClick = () => {
+    const next = logoTapCount + 1;
+    setLogoTapCount(next);
+    clearTimeout(logoTapTimer.current);
+    if (next >= 5) { setLogoTapCount(0); onGuruMode(); return; }
+    logoTapTimer.current = setTimeout(() => setLogoTapCount(0), 2000);
+  };
+
   return (
-    <div className="max-w-lg mx-auto px-4 py-6">
-      <div className="bg-white shadow-xl overflow-hidden" style={{ border: "2px solid #003082", borderRadius: "0" }}>
-        <div className="p-6 text-white text-center" style={{ background: "linear-gradient(135deg, #CC0000 0%, #8B0000 100%)", borderBottom: "4px solid #003082" }}>
-          <h2 className="text-xl font-black uppercase tracking-widest" style={{ fontFamily: "'Georgia', serif" }}>Asesmen Sumatif</h2>
-          <p className="text-red-200 text-xs mt-1 uppercase tracking-[0.15em]">Masukkan NISN dan token ujian</p>
-        </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>🎫 NISN</label>
-            <input
-              type="text"
-              value={nisn}
-              onChange={e => handleNisnChange(e.target.value)}
-              placeholder="Masukkan NISN kamu..."
-              className="w-full px-4 py-3 text-sm font-mono tracking-wider focus:outline-none"
-              style={{ border: "2px solid #003082", borderRadius: "0" }}
-            />
-            {lookupStatus === "loading" && (
-              <div className="mt-2 flex items-center gap-2 text-xs" style={{ color: "#CC0000" }}>
-                <div className="w-3 h-3 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#CC0000", borderTopColor: "transparent" }}></div>
-                Mencari data siswa...
-              </div>
-            )}
-            {lookupStatus === "found" && (
-              <div className="mt-2 px-4 py-3" style={{ background: "#f0fdf4", border: "1px solid #16a34a", borderRadius: "0" }}>
-                <p className="text-xs text-green-600 font-bold mb-0.5 uppercase">✓ Siswa ditemukan</p>
-                <p className="text-sm font-extrabold text-green-800">{namaLookup}</p>
-                {kelasLookup && <p className="text-xs text-green-600">Kelas: {kelasLookup}</p>}
-              </div>
-            )}
-            {lookupStatus === "notfound" && nisn.trim().length >= 4 && (
-              <div className="mt-2 px-4 py-3" style={{ background: "#fef2f2", border: "1px solid #CC0000", borderRadius: "0" }}>
-                <p className="text-xs font-bold uppercase" style={{ color: "#CC0000" }}>✗ NISN tidak ditemukan</p>
-                <p className="text-xs text-red-500">Pastikan NISN benar atau hubungi guru untuk didaftarkan.</p>
-              </div>
-            )}
-          </div>
+    <div className="min-h-screen flex flex-col items-center justify-start relative font-sans pt-6 pb-6" style={{ background: "linear-gradient(160deg, #003082 0%, #001a4d 60%, #8B0000 100%)" }}>
+      <style>{animationStyles}</style>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>📚 Mata Pelajaran</label>
-              <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full px-3 py-3 text-sm focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0" }}>
-                {mapelList.map(m => <option key={m}>{m}</option>)}
-              </select>
+      <div className="relative z-10 w-full max-w-[440px] px-4 flex flex-col items-center">
+        
+        {/* Header (Logo + Nama Sekolah + Title) */}
+        <div className="flex flex-col items-center mb-4 text-center w-full justify-center">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo" onClick={handleLogoClick} className="w-[104px] h-[104px] object-contain drop-shadow-lg cursor-pointer select-none" style={{ marginBottom: "4px" }} />
+          ) : (
+            <div onClick={handleLogoClick} className="w-[104px] h-[104px] bg-white rounded-full flex items-center justify-center text-5xl shadow-lg border-2 border-white/30 cursor-pointer select-none" style={{ marginBottom: "4px" }}>
+              🎓
             </div>
-            <div>
-              <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>📋 Asesmen</label>
-              <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full px-3 py-3 text-sm focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0" }}>
-                {asesmenList.map(a => <option key={a}>{a}</option>)}
-              </select>
+          )}
+          {namaSekolah ? (
+            <p className="text-[15px] font-extrabold text-white uppercase tracking-wide drop-shadow" style={{ marginBottom: "10px" }}>{namaSekolah}</p>
+          ) : (
+            <p className="text-[14px] font-bold text-white/80 uppercase tracking-widest" style={{ marginBottom: "10px" }}>CBT Application</p>
+          )}
+          <h1 className="text-[13px] font-semibold tracking-[0.2em] text-red-300 uppercase">Portal Ujian Digital</h1>
+        </div>
+
+        {/* Card Login */}
+        <div className="bg-white w-full overflow-hidden animate-slide-up-fade" style={{ borderRadius: "0", border: "3px solid #CC0000", boxShadow: "0 12px 40px rgba(0,0,0,0.35)" }}>
+          
+          {/* Card Header strip — sama dengan GuruLogin */}
+          <div style={{ background: "linear-gradient(135deg, #CC0000, #990000)", padding: "16px 24px 14px" }}>
+            <h2 className="text-[17px] font-black text-white tracking-wide text-center" style={{ fontFamily: "'Georgia', serif" }}>LOGIN SISWA</h2>
+            <p className="text-red-200 text-xs mt-0.5 uppercase tracking-widest text-center">Masukkan data untuk memulai ujian</p>
+          </div>
+
+          <div className="px-8 pt-5 pb-5">
+            <div className="space-y-4">
+              {/* NISN */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"></path></svg>
+                </div>
+                <input
+                  type="text"
+                  value={nisn}
+                  onChange={e => handleNisnChange(e.target.value)}
+                  placeholder="NISN"
+                  className="w-full pl-9 pr-4 py-2 bg-transparent border-b-2 text-gray-700 text-[15px] focus:outline-none transition-colors"
+                  style={{ borderColor: "#003082", borderTop: "none", borderLeft: "none", borderRight: "none" }}
+                />
+                {lookupStatus === "loading" && (
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: "#CC0000", borderTopColor: "transparent" }}></div>
+                )}
+              </div>
+              {lookupStatus === "found" && (
+                <div className="text-xs font-semibold text-green-600 pl-9 -mt-2">
+                  ✓ {namaLookup} {kelasLookup ? `— ${kelasLookup}` : ""}
+                </div>
+              )}
+              {lookupStatus === "notfound" && nisn.trim().length >= 4 && (
+                <div className="text-xs font-semibold text-red-500 pl-9 -mt-2">
+                  ✕ NISN tidak ditemukan
+                </div>
+              )}
+
+              {/* Mapel & Asesmen */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                  </div>
+                  <select value={mapel} onChange={e => setMapel(e.target.value)} className="w-full pl-8 pr-1 py-2 bg-transparent border-b-2 text-gray-600 text-[13px] focus:outline-none transition-colors cursor-pointer" style={{ appearance: "none", borderColor: "#003082", borderTop: "none", borderLeft: "none", borderRight: "none" }}>
+                    {mapelList.map(m => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                  </div>
+                  <select value={asesmen} onChange={e => setAsesmen(e.target.value)} className="w-full pl-8 pr-1 py-2 bg-transparent border-b-2 text-gray-600 text-[13px] focus:outline-none transition-colors cursor-pointer" style={{ appearance: "none", borderColor: "#003082", borderTop: "none", borderLeft: "none", borderRight: "none" }}>
+                    {asesmenList.map(a => <option key={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Token */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 flex items-center pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd"></path></svg>
+                </div>
+                <input
+                  type="text"
+                  value={token}
+                  onChange={e => setToken(e.target.value.toUpperCase())}
+                  placeholder="Token Ujian"
+                  className="w-full pl-9 pr-8 py-2 bg-transparent border-b-2 text-gray-700 text-[15px] focus:outline-none transition-colors uppercase tracking-widest font-bold"
+                  style={{ borderColor: "#003082", borderTop: "none", borderLeft: "none", borderRight: "none" }}
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pointer-events-none">
+                   <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"></path><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"></path></svg>
+                </div>
+              </div>
+              
+              {err && (
+                <div className="text-[13px] font-semibold" style={{ color: "#CC0000" }}>
+                  ⚠ {err}
+                </div>
+              )}
+
+              <div className="pt-1">
+                <button
+                  onClick={handle}
+                  disabled={lookupStatus === "loading" || !nisn.trim() || loginLoading}
+                  className="w-full text-white font-bold py-3 transition-colors flex justify-center items-center text-[15px] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-widest"
+                  style={{ background: "#CC0000", borderRadius: "0" }}
+                >
+                  {loginLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></span> : null}
+                  Mulai Ujian
+                </button>
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest block mb-1" style={{ color: "#003082" }}>🔑 Token Ujian</label>
-            <input value={token} onChange={e => setToken(e.target.value.toUpperCase())} placeholder="Tanya gurumu..." className="w-full px-4 py-3 text-sm uppercase tracking-widest font-mono font-bold focus:outline-none" style={{ border: "2px solid #003082", borderRadius: "0", color: "#CC0000" }} />
-          </div>
-
-          {err && <div className="px-4 py-3 text-sm font-bold text-center uppercase" style={{ background: "#fef2f2", border: "1px solid #CC0000", color: "#CC0000", borderRadius: "0" }}>{err}</div>}
-
-          <button onClick={handle} disabled={lookupStatus === "loading" || !nisn.trim()} className="w-full text-white font-black py-4 text-sm uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50" style={{ background: "linear-gradient(135deg, #CC0000, #990000)", borderRadius: "0", letterSpacing: "0.2em" }}>
-            🚀 Mulai Ujian
-          </button>
-          <button onClick={onGuruMode} className="w-full text-xs py-2 transition-colors" style={{ color: "#003082" }}>
-            Mode Guru 🔐
-          </button>
-          <p className="text-center text-xs text-slate-400 pt-2 border-t border-slate-100">
-            Copyright &copy; 2026 Hairur Rahman
-          </p>
+          {/* Bottom strip biru — sama dengan GuruLogin */}
+          <div style={{ background: "#003082", height: "6px" }} />
         </div>
+        
+        {/* Teks Footer Bawah */}
+        <div className="mt-5 flex flex-col items-center">
+          <p className="text-[12px] text-white/40 font-medium">Copyright © 2026 Hairur Rahman</p>
+        </div>
+
       </div>
     </div>
   );
@@ -2168,7 +2926,7 @@ function RenderHTML({ html, className = "" }) {
 // ============================================================
 // HALAMAN UJIAN (HalamanUjian)
 // ============================================================
-function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, namaGuru, nipGuru, kotaTTD, namaSekolah }) {
+function HalamanUjian({ siswa, addToast, onSelesai, durasiMenit, namaGuru, nipGuru, kotaTTD, namaSekolah }) {
   const [soalList, setSoalList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -2191,20 +2949,12 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
   useEffect(() => {
     const fetchSoal = async () => {
       setLoading(true);
-      const key = `${siswa.mapel}_${siswa.asesmen}`;
       try {
-        const url = scriptUrl || APPS_SCRIPT_URL;
-        const res = await fetch(`${url}?action=getSoal&mapel=${encodeURIComponent(siswa.mapel)}&asesmen=${encodeURIComponent(siswa.asesmen)}&token=${encodeURIComponent(siswa.token)}`);
-        const data = await res.json();
+        const data = await FS.getSoal({ mapel:siswa.mapel, asesmen:siswa.asesmen, token:siswa.token });
         if (data.status === "success" && data.soal?.length > 0) setSoalList(data.soal);
-        else throw new Error("no soal");
-      } catch {
-        const demo = DEMO_SOAL[key];
-        if (!demo) { addToast("Soal tidak ditemukan.", "error"); setLoading(false); return; }
-        if (siswa.token !== DEMO_TOKEN) { addToast("Token salah! Coba lagi.", "error"); setLoading(false); return; }
-        setSoalList(demo);
-        addToast("Mode Demo aktif.", "info");
-      } finally { setLoading(false); }
+        else { addToast(data.message || "Soal tidak tersedia.", "error"); setLoading(false); return; }
+      } catch { addToast("Gagal terhubung ke server.", "error"); setLoading(false); return; }
+      finally { setLoading(false); }
     };
     fetchSoal();
   }, []);
@@ -2363,20 +3113,15 @@ function HalamanUjian({ siswa, scriptUrl, addToast, onSelesai, durasiMenit, nama
       .map((s) => ({ soal: s.soal, referensi: s.jawabanReferensi || "", jawaban: jawaban[s.id] || "" }));
 
     try {
-      const url = scriptUrl || APPS_SCRIPT_URL;
-      await fetch(url, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "simpanHasil",
-          nama: siswa.nama, nisn: siswa.nisn, noAbsen: siswa.noAbsen,
-          mapel: siswa.mapel, asesmen: siswa.asesmen,
-          nilai, adaEsai,
-          jawabanEsai: adaEsai ? JSON.stringify(jawabanEsaiList) : "",
-          token: siswa.token,
-          waktu: new Date().toLocaleString("id-ID")
-        })
+      await FS.simpanHasil({
+        nama: siswa.nama, nisn: siswa.nisn, noAbsen: siswa.noAbsen,
+        mapel: siswa.mapel, asesmen: siswa.asesmen,
+        nilai, adaEsai,
+        jawabanEsai: adaEsai ? JSON.stringify(jawabanEsaiList) : "",
+        token: siswa.token,
+        waktu: new Date().toLocaleString("id-ID")
       });
-    } catch { /* demo */ }
+    } catch { /* gagal simpan — log saja */ }
     if (!autoSubmit) addToast("Ujian berhasil dikumpulkan! 🎉", "success");
   };
 
@@ -2702,49 +3447,48 @@ export default function App() {
   const [mode, setMode] = useState("siswa");
   const [siswa, setSiswa] = useState(null);
   const [settings, setSettings] = useState(() => { try { return JSON.parse(localStorage.getItem("appSettings") || "{}"); } catch { return {}; } });
-  const [scriptUrl, setScriptUrl] = useState(() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } });
   const [mapelList, setMapelList] = useState([...DEFAULT_MAPEL]);
   const [asesmenList, setAsesmenList] = useState([...DEFAULT_ASESMEN]);
   const handleSetMapelList = (list) => { setMapelList(list); try { localStorage.setItem("customMapel", JSON.stringify(list)); } catch {} };
   const handleSetAsesmenList = (list) => { setAsesmenList(list); try { localStorage.setItem("customAsesmen", JSON.stringify(list)); } catch {} };
   
   useEffect(() => {
-    const url = (() => { try { return localStorage.getItem("scriptUrl") || ""; } catch { return ""; } })() || APPS_SCRIPT_URL;
-    if (!url || url.includes("YOUR_APPS_SCRIPT_ID")) return;
-    fetch(`${url}?action=getPengaturan`).then(r => r.json()).then(data => {
+    // Load pengaturan dari Firestore saat startup
+    FS.getPengaturan().then(data => {
       if (data.status === "success" && data.data && Object.keys(data.data).length > 0) {
         const remote = data.data;
-        const merged = { 
-          logoUrl: remote.logoUrl || "", 
-          namaSekolah: remote.namaSekolah || "", 
-          namaGuru: remote.namaGuru || "", 
-          nipGuru: remote.nipGuru || "", 
-          kotaTTD: remote.kotaTTD || "", 
-          durasiMenit: remote.durasiMenit ? Number(remote.durasiMenit) : 60, 
+        const merged = {
+          logoUrl: remote.logoUrl || "",
+          namaSekolah: remote.namaSekolah || "",
+          namaGuru: remote.namaGuru || "",
+          nipGuru: remote.nipGuru || "",
+          kotaTTD: remote.kotaTTD || "",
+          durasiMenit: remote.durasiMenit ? Number(remote.durasiMenit) : 60,
           spreadsheetUrl: remote.spreadsheetUrl || "",
           fotoGuru: remote.fotoGuru || ""
         };
-        setSettings(merged); try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
-        try { localStorage.setItem("scriptUrl", url); } catch {}; setScriptUrl(url);
+        setSettings(merged);
+        try { localStorage.setItem("appSettings", JSON.stringify(merged)); } catch {}
       }
     }).catch(()=>{});
-    Promise.all([fetchMapelList(url), fetchAsesmenList(url)]).then(([mapels, asesmens]) => { setMapelList(mapels); setAsesmenList(asesmens); try { localStorage.setItem("customMapel", JSON.stringify(mapels)); } catch {}; try { localStorage.setItem("customAsesmen", JSON.stringify(asesmens)); } catch {}; }).catch(()=>{});
+    Promise.all([fetchMapelList(), fetchAsesmenList()]).then(([mapels, asesmens]) => {
+      setMapelList(mapels); setAsesmenList(asesmens);
+    }).catch(()=>{});
   }, []);
   
   const saveSettings = s => { setSettings(s); try { localStorage.setItem("appSettings", JSON.stringify(s)); } catch {} };
-  const saveScriptUrl = u => { setScriptUrl(u); try { localStorage.setItem("scriptUrl", u); } catch {} };
   const handleMulaiUjian = async (data) => { setSiswa(data); setMode("ujian"); try { const el = document.documentElement; if (el.requestFullscreen) await el.requestFullscreen(); else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen(); } catch {} };
   const handleSelesaiUjian = async () => { setSiswa(null); setMode("siswa"); try { if (document.fullscreenElement || document.webkitFullscreenElement) { if (document.exitFullscreen) await document.exitFullscreen(); else if (document.webkitExitFullscreen) await document.webkitExitFullscreen(); } } catch {} };
   
   return (
     <div className="min-h-screen bg-gray-100">
       <Toast toasts={toasts} />
-      {mode !== "guru" && mode !== "guruLogin" && <AppHeader logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />}
+      {mode !== "guru" && mode !== "guruLogin" && mode !== "siswa" && <AppHeader logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />}
       <main className="pb-10">
-        {mode === "siswa" && <HalamanSiswa onMulaiUjian={handleMulaiUjian} onGuruMode={() => setMode("guruLogin")} mapelList={mapelList} asesmenList={asesmenList} logoUrl={settings.logoUrl} />}
-        {mode === "ujian" && siswa && <HalamanUjian siswa={siswa} scriptUrl={scriptUrl} addToast={addToast} onSelesai={handleSelesaiUjian} durasiMenit={settings.durasiMenit || 60} namaGuru={settings.namaGuru || ""} nipGuru={settings.nipGuru || ""} kotaTTD={settings.kotaTTD || ""} namaSekolah={settings.namaSekolah || ""} />}
+        {mode === "siswa" && <HalamanSiswa onMulaiUjian={handleMulaiUjian} onGuruMode={() => setMode("guruLogin")} mapelList={mapelList} asesmenList={asesmenList} logoUrl={settings.logoUrl} namaSekolah={settings.namaSekolah} />}
+        {mode === "ujian" && siswa && <HalamanUjian siswa={siswa} addToast={addToast} onSelesai={handleSelesaiUjian} durasiMenit={settings.durasiMenit || 60} namaGuru={settings.namaGuru || ""} nipGuru={settings.nipGuru || ""} kotaTTD={settings.kotaTTD || ""} namaSekolah={settings.namaSekolah || ""} />}
         {mode === "guruLogin" && <GuruLogin onLogin={() => setMode("guru")} />}
-        {mode === "guru" && <GuruPanel addToast={addToast} onLogout={() => setMode("siswa")} settings={settings} onSaveSettings={saveSettings} scriptUrl={scriptUrl} onSaveScriptUrl={saveScriptUrl} mapelList={mapelList} setMapelList={handleSetMapelList} asesmenList={asesmenList} setAsesmenList={handleSetAsesmenList} />}
+        {mode === "guru" && <GuruPanel addToast={addToast} onLogout={() => setMode("siswa")} settings={settings} onSaveSettings={saveSettings} mapelList={mapelList} setMapelList={handleSetMapelList} asesmenList={asesmenList} setAsesmenList={handleSetAsesmenList} />}
       </main>
     </div>
   );
